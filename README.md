@@ -34,5 +34,5 @@ You now have a dependency on **make** and require the build client to have this 
 builder.h require a bootstrapping process before launching the build since the build system is written in C, but for this reason the entire project depend only on the C compiler, reducing the risk of having an external program to start 
 the compilation. **You just need a C compiler**. <br>
 Beside that, you are working with a fully functional programming language that is acting as a build system, it means you can infact execute code or scripts while launching compilation command, for example you 
-can include a "preprocessing" inside your *builder.c* that perform some work on the source code and then launch the comilation, the possibilities are endless and can be all implemented in a build system written in 
+can include a "preprocessing" inside your *builder.c* that perform some work on the source code before launching the compilation, the possibilities are endless and can be all implemented in a build system written in 
 the same language as your project is written with, or generally require just a C compiler to bootstrap the building process, and it's easy to have one instead of gamble on the existence of make inside the target system.
