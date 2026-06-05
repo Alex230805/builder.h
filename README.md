@@ -29,10 +29,10 @@ If an update to the build script is needed you can modify *builder.c* and bootst
 
 Having a build system for complex project is important and you can't avoid it if the complexity is growing fast, but that comes with the cost of having a separate program that can build your application, 
 for example by using **make** with a dedicated makefile. <br>
-You now have a dependency on **make** and it build system and require the build client to have this separate program installed before even begin with the compilation. <br><br>
+You now have a dependency on **make** and require the build client to have this separate program installed before even begin with the compilation. <br><br>
 
-builder.h require a bootstrapping process before launching the build, but the entire project depend only on the C compiler, even the build system, reducing the risk of having an external program to start 
+builder.h require a bootstrapping process before launching the build since the build system is written in C, but for this reason the entire project depend only on the C compiler, reducing the risk of having an external program to start 
 the compilation. **You just need a C compiler**. <br>
 Beside that, you are working with a fully functional programming language that is acting as a build system, it means you can infact execute code or scripts while launching compilation command, for example you 
 can include a "preprocessing" inside your *builder.c* that perform some work on the source code and then launch the comilation, the possibilities are endless and can be all implemented in a build system written in 
-the same language as your project is written with, or generally require just a C compiler to bootstrap the building process, and it's easy to have one instead of gamble on the existence of make on the target system.
+the same language as your project is written with, or generally require just a C compiler to bootstrap the building process, and it's easy to have one instead of gamble on the existence of make inside the target system.
