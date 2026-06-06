@@ -14,16 +14,16 @@
 
 #define INIT_P_RETURN 69420
 
-#define LOCAL_SIZE 1024*8
+#define LOCAL_SIZE 1024*16
 
 #define cmd_set(cmd, ...)\
 	cmd_set_imp(&cmd, (char* []){__VA_ARGS__, NULL});
 
 #define DEFAULT_CMD_LIST_SIZE 4
+#define DEFAULT_PATH_SIZE	512
 
-static char path[512] = {0}; // main path, used to spawn processes from their location
+static char path[DEFAULT_PATH_SIZE] = {0}; // main path, used to spawn processes from their location
 
-#define DEFAULT_SEARCH_PATH "/bin"
 
 typedef struct{
 	char** array;
@@ -47,15 +47,27 @@ typedef struct{
 	size_t size;
 }Process_View;
 
+typedef struct{
+	char** tree;
+	size_t depth;
+	size_t size;
+}Path;
+
+
 static char local_mem[LOCAL_SIZE] =  {0};
 static size_t local_tracker =	0;
 static size_t local_size =		LOCAL_SIZE;
 
 void cmd_set_imp(Cmd* cmd, char* list[]);
 void* local_alloc(size_t size);
+void local_alloc_rewind(size_t size);
 
 void get_current_path();
 void set_static_path(const char* static_path);
+bool search_default_valid_path(char* executable);
+
+Path* path_chop(char* path);
+void path_render(char* path, Path* p);
 void path_append(const char* dir);
 char *path_compose(char* path, char* string);
 
@@ -70,6 +82,7 @@ Process_View* spawn_process_list(Cmd_List* cmd);
 
 void wait_on_process(Process* proc);
 void wait_on_process_list(Process_View* procs);
+
 
 static void capture_return(Process* process);
 
@@ -89,6 +102,14 @@ void* local_alloc(size_t size){
 	local_tracker += size;
 	if(local_tracker >= local_size) local_tracker = 0;
 	return ptr;
+}
+
+void local_alloc_rewind(size_t size){
+	if((int)local_tracker - (int)size < 0) {
+		local_tracker = 0;
+		return;
+	}
+	local_tracker -= size;
 }
 
 void cmd_append(Cmd* cmd, char* string){
@@ -112,7 +133,6 @@ void cmd_append(Cmd* cmd, char* string){
 void set_static_path(const char* static_path){
 	path[0] = '\0';
 	strcpy(path, static_path);
-	strcat(path, "/");
 }
 
 void get_current_path(){
@@ -124,19 +144,49 @@ void get_current_path(){
 	fread(path, sizeof(char), size, fp);
 	path[size] = '\0';
 	*(strchr(path, '\n')) = '\0';
-	strcat(path, "/");
+}
+
+Path* path_chop(char* path){
+	char* n = NULL;
+	int i=0;
+	char* cache = path;
+	do{ n = strchr(path, '/'); i+=1; path  = n+1; }while(n != NULL);
+	Path* p = (Path*)local_alloc(sizeof(Path));
+	p->depth = i;
+	p->size = DEFAULT_PATH_SIZE;
+	p->tree = (char**)local_alloc(sizeof(char*)*p->size);
+	for(i = 0;i<p->depth; i++){
+		n = strchr(cache, '/');
+		int len = n - cache;
+		p->tree[i] = (char*)local_alloc(sizeof(char)*len);	
+		memcpy(p->tree[i], cache, sizeof(char)*len);
+		cache = n+1;
+	}
+	return p;
+}
+
+void path_render(char* path, Path* p){
+	path[0] = '\0';
+	for(int i=0;i<p->depth; i++){
+		strcat(path, "/");
+		strcat(path, p->tree[i]);
+	}
 }
 
 void path_append(const char* dir){
-	strcat(path, "/");
-	strcat(path, dir);
-	strcat(path, "/");
+	Path* p = path_chop(path);
+	if(p->depth+1 >= p->size) return;
+	p->tree[p->depth] = (char*)local_alloc(sizeof(char)*strlen(dir));
+	memcpy(p->tree[p->depth], dir, strlen(dir));
+	p->depth += 1;
+	path_render(path, p);
 }
 
 char *path_compose(char* path, char* string){
 	int size = strlen(path) + strlen(string);
-	char* out = (char*)local_alloc(sizeof(char)*size+1);
+	char* out = (char*)local_alloc((sizeof(char)*size)+2);
 	strcpy(out, path);
+	strcat(out, "/");
 	strcat(out, string);
 	return out;
 }
@@ -159,17 +209,60 @@ void cmd_list_append(Cmd_List* list, Cmd* cmd){
 	}
 }
 
+bool search_default_valid_path(char* executable){
+	char* buffer = NULL;
+	FILE* fp = popen("echo $PATH", "r");
+	fseek(fp, 0, SEEK_END);
+	int size = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	buffer = (char*)local_alloc((sizeof(char)*size)+1);
+
+	fread(buffer, sizeof(char), size, fp);
+	buffer[size] = '\0';
+	*(strchr(buffer, '\n')) = '\0';
+	
+	char* c = strchr(buffer, ':');
+	char* pos = (char*)malloc(sizeof(char)*DEFAULT_PATH_SIZE);
+
+	bool end = false;
+	while(c != NULL && !end){
+		int size = c - buffer;
+		memcpy(pos, buffer, size);
+		pos[size] = '\0';
+		strcat(pos, "/");
+		strcat(pos, executable);
+		if(!access(pos, F_OK)){
+			memcpy(&path[0], buffer, size);
+			end = true;
+		}
+		buffer = c+1;
+		c = strchr(buffer, ':');
+	}
+	local_alloc_rewind((sizeof(char)*size)+1);
+	free(pos);
+	pos = NULL;
+	return end;
+}
 
 pid_t cmd_execute(Cmd* cmd){
-	if(strlen(path) < 1){
-		set_static_path(DEFAULT_SEARCH_PATH);
+	char* ex = path_compose(path, cmd->array[0]);
+	if(access(ex, F_OK) != 0){
+		printf("[WARNING]: valid path not provided for '%s', using defaults from $PATH\n", cmd->array[0]);
+		if(!search_default_valid_path(cmd->array[0])){
+			fprintf(stderr, "Unable to locate executable %s, please provide the search path using 'set_static_path' or 'get_current_path'\n", cmd->array[0]);
+			return 0;
+		}else{
+			ex = path_compose(path, cmd->array[0]);
+		}
 	}
+
 	printf("[CMD]: [");
 	for(size_t i=0;i<cmd->tracker; i++){
 		if(i==0){
-			printf("%s", path);
+			printf("%s, ", ex);
+		}else{
+			printf("%s, ", cmd->array[i]);
 		}
-		printf("%s, ", cmd->array[i]);
 	}
 	printf("NULL]\n");
 	pid_t pid = fork();
@@ -179,7 +272,7 @@ pid_t cmd_execute(Cmd* cmd){
 	if(pid > 0){
 		return pid;
 	}else{
-		if(execv(path_compose(path, cmd->array[0]), cmd->array) < 0){
+		if(execv(ex, cmd->array) < 0){
 			fprintf(stderr, "Unable to spawn process: %s\n", strerror(errno));
 			abort();
 		}
@@ -239,8 +332,8 @@ void wait_on_process_list(Process_View* procs){
 	bool exit = false;
 	while(!exit){
 		exit = true;
+		sleep(1);
 		for(int i=0;i<procs->size;i++){
-			sleep(1);
 			if(procs->array[i]->ret_status == INIT_P_RETURN){
 				exit = false;
 			}
