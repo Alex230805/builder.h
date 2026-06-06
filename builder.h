@@ -13,14 +13,13 @@
 #include <string.h>
 
 #define INIT_P_RETURN 69420
-
+#define DEFAULT_CMD_LIST_SIZE 4
+#define DEFAULT_PATH_SIZE	512
 #define LOCAL_SIZE 1024*16
 
 #define cmd_set(cmd, ...)\
-	cmd_set_imp(&cmd, (char* []){__VA_ARGS__, NULL});
+		cmd_set_imp((&cmd), (char* []){__VA_ARGS__, NULL});
 
-#define DEFAULT_CMD_LIST_SIZE 4
-#define DEFAULT_PATH_SIZE	512
 
 static char path[DEFAULT_PATH_SIZE] = {0}; // main path, used to spawn processes from their location
 
@@ -62,7 +61,7 @@ void cmd_set_imp(Cmd* cmd, char* list[]);
 void* local_alloc(size_t size);
 void local_alloc_rewind(size_t size);
 
-void get_current_path();
+char* get_current_path();
 void set_static_path(const char* static_path);
 bool search_default_valid_path(char* executable);
 
@@ -89,6 +88,7 @@ static void capture_return(Process* process);
 #ifdef BUILDER_IMP
 
 void cmd_set_imp(Cmd* cmd, char* list[]){
+	cmd->tracker = 0;
 	int i=0;
 	while(list[i] != NULL){
 		cmd_append(cmd, list[i]);
@@ -135,15 +135,16 @@ void set_static_path(const char* static_path){
 	strcpy(path, static_path);
 }
 
-void get_current_path(){
-	path[0] = '\0';
+char* get_current_path(){
 	FILE* fp = popen("echo $PWD", "r");
 	fseek(fp,0, SEEK_END);
 	int size = ftell(fp);
 	fseek(fp, 0, SEEK_SET);
-	fread(path, sizeof(char), size, fp);
-	path[size] = '\0';
-	*(strchr(path, '\n')) = '\0';
+	char* p = (char*)local_alloc(sizeof(char)*size+1);
+	fread(p, sizeof(char), size, fp);
+	p[size] = '\0';
+	*(strchr(p, '\n')) = '\0';
+	return p;
 }
 
 Path* path_chop(char* path){
@@ -155,13 +156,18 @@ Path* path_chop(char* path){
 	p->depth = i;
 	p->size = DEFAULT_PATH_SIZE;
 	p->tree = (char**)local_alloc(sizeof(char*)*p->size);
+	int tracker = 0;
 	for(i = 0;i<p->depth; i++){
 		n = strchr(cache, '/');
 		int len = n - cache;
-		p->tree[i] = (char*)local_alloc(sizeof(char)*len);	
-		memcpy(p->tree[i], cache, sizeof(char)*len);
+		if(len > 1){
+			p->tree[tracker] = (char*)local_alloc(sizeof(char)*len);	
+			memcpy(p->tree[tracker], cache, sizeof(char)*len);
+			tracker += 1;
+		}
 		cache = n+1;
 	}
+	p->depth = tracker;
 	return p;
 }
 
@@ -247,13 +253,12 @@ bool search_default_valid_path(char* executable){
 pid_t cmd_execute(Cmd* cmd){
 	char* ex = path_compose(path, cmd->array[0]);
 	if(access(ex, F_OK) != 0){
-		printf("[WARNING]: valid path not provided for '%s', using defaults from $PATH\n", cmd->array[0]);
+		printf("[WARNING]: path not provided for '%s', using defaults from $PATH\n", cmd->array[0]);
 		if(!search_default_valid_path(cmd->array[0])){
-			fprintf(stderr, "Unable to locate executable %s, please provide the search path using 'set_static_path' or 'get_current_path'\n", cmd->array[0]);
+			fprintf(stderr, "Unable to locate executable %s, please provide the search path using 'set_static_path', or 'get_current_path' for executable in the current location\n", cmd->array[0]);
 			return 0;
-		}else{
-			ex = path_compose(path, cmd->array[0]);
 		}
+		ex = path_compose(path, cmd->array[0]);
 	}
 
 	printf("[CMD]: [");
