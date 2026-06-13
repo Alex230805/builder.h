@@ -244,7 +244,7 @@ bool search_default_valid_path(char* executable){
 	char* pos = (char*)malloc(sizeof(char)*DEFAULT_PATH_SIZE);
 
 	bool end = false;
-	while(c != NULL && !end){
+	while(!end){
 		int size = c - buffer;
 		memcpy(pos, buffer, size);
 		pos[size] = '\0';
@@ -254,9 +254,14 @@ bool search_default_valid_path(char* executable){
 			memcpy(&path[0], buffer, size);
 			end = true;
 		}
+		if(*c == '\0') break;
 		buffer = c+1;
 		c = strchr(buffer, ':');
+		if(c == NULL){
+			c = strchr(buffer, '\0');
+		}
 	}
+
 	local_alloc_rewind((sizeof(char)*size)+1);
 	free(pos);
 	pos = NULL;
