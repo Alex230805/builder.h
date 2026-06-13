@@ -4,6 +4,7 @@
 
 int main(){
 	auto_rebuild("example.c", "example");
+	
 	printf("Testing build system\n");
 	Cmd cmd[2] = {0};
 	Cmd_List cmd_list = {0};
