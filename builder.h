@@ -16,6 +16,7 @@
 #define DEFAULT_CMD_LIST_SIZE 4
 #define DEFAULT_PATH_SIZE	512
 #define LOCAL_SIZE 1024*16
+#define HASH_FILE "./.builder_hash"
 
 #define cmd_set(cmd, ...)\
 		cmd_set_imp((&cmd), (char* []){__VA_ARGS__, NULL});
@@ -82,8 +83,20 @@ Process_View* spawn_process_list(Cmd_List* cmd);
 void wait_on_process(Process* proc);
 void wait_on_process_list(Process_View* procs);
 
-
 static void capture_return(Process* process);
+
+char* get_sha512(char* string);
+char* get_sha256(char* string);
+char* get_sha1(char* string);
+
+char* get_sha512_from_file(char* file);
+char* get_sha256_from_file(char* file);
+char* get_sha1_from_file(char* file);
+
+char* read_file(char* file);
+void  write_file(char* file, char* content);
+
+void auto_rebuild(char* src, char* output_name);
 
 #ifdef BUILDER_IMP
 
@@ -270,6 +283,7 @@ pid_t cmd_execute(Cmd* cmd){
 		}
 	}
 	printf("NULL]\n");
+	cmd_append(cmd, NULL);
 	pid_t pid = fork();
 	if(pid < 0){
 		abort();
@@ -347,7 +361,141 @@ void wait_on_process_list(Process_View* procs){
 	return;
 }
 
+
+char* get_sha512(char* string){
+	char stdin_buffer[128];
+	sprintf(stdin_buffer, "sha512 -s ");
+	strcat(stdin_buffer, string);
+	FILE* s = popen(stdin_buffer, "r");
+	fseek(s, 0, SEEK_END);
+	size_t size = ftell(s);
+	fseek(s, 0, SEEK_SET);
+	char* hash = (char*)local_alloc(sizeof(char)*size);
+	fread(hash, sizeof(char), size, s);
+	*(strchr(hash, '\n')) = '\0';
+	return hash;
+}
+
+char* get_sha512_from_file(char* file){
+	char stdin_buffer[128];
+	sprintf(stdin_buffer, "sha512 --quiet ");
+	strcat(stdin_buffer, file);
+	FILE* s = popen(stdin_buffer, "r");
+	fseek(s, 0, SEEK_END);
+	size_t size = ftell(s);
+	fseek(s, 0, SEEK_SET);
+	char* hash = (char*)local_alloc(sizeof(char)*size);
+	fread(hash, sizeof(char), size, s);
+	*(strchr(hash, '\n')) = '\0';
+	return hash;
+}
+
+char* get_sha256(char* string){
+	char stdin_buffer[128];
+	sprintf(stdin_buffer, "sha256 -s ");
+	strcat(stdin_buffer, string);
+	FILE* s = popen(stdin_buffer, "r");
+	fseek(s, 0, SEEK_END);
+	size_t size = ftell(s);
+	fseek(s, 0, SEEK_SET);
+	char* hash = (char*)local_alloc(sizeof(char)*size);
+	fread(hash, sizeof(char), size, s);
+	*(strchr(hash, '\n')) = '\0';
+	return hash;
+}
+
+char* get_sha256_from_file(char* file){
+	char stdin_buffer[128];
+	sprintf(stdin_buffer, "sha256 --quiet ");
+	strcat(stdin_buffer, file);
+	FILE* s = popen(stdin_buffer, "r");
+	fseek(s, 0, SEEK_END);
+	size_t size = ftell(s);
+	fseek(s, 0, SEEK_SET);
+	char* hash = (char*)local_alloc(sizeof(char)*size);
+	fread(hash, sizeof(char), size, s);
+	*(strchr(hash, '\n')) = '\0';
+	return hash;
+}
+
+char* get_sha1(char* string){
+	char stdin_buffer[128];
+	sprintf(stdin_buffer, "sha1 -s ");
+	strcat(stdin_buffer, string);
+	FILE* s = popen(stdin_buffer, "r");
+	fseek(s, 0, SEEK_END);
+	size_t size = ftell(s);
+	fseek(s, 0, SEEK_SET);
+	char* hash = (char*)local_alloc(sizeof(char)*size);
+	fread(hash, sizeof(char), size, s);
+	*(strchr(hash, '\n')) = '\0';
+	return hash;
+}
+
+char* get_sha1_from_file(char* file){
+	char stdin_buffer[128];
+	sprintf(stdin_buffer, "sha1 --quiet ");
+	strcat(stdin_buffer, file);
+	FILE* s = popen(stdin_buffer, "r");
+	fseek(s, 0, SEEK_END);
+	size_t size = ftell(s);
+	fseek(s, 0, SEEK_SET);
+	char* hash = (char*)local_alloc(sizeof(char)*size);
+	fread(hash, sizeof(char), size, s);
+	*(strchr(hash, '\n')) = '\0';
+	return hash;
+}
+
+char* read_file(char* file){
+	FILE* fp = fopen(file, "r");
+	if(!fp){
+		fprintf(stderr, "Cannot open file: %s\n", strerror(errno));
+		exit(errno);
+	}
+	fseek(fp, 0, SEEK_END);
+	int size = ftell(fp);
+	fseek(fp, 0, SEEK_SET);
+	char* buffer = (char*)malloc(sizeof(char)*size+1);
+	fread(buffer, sizeof(char), size, fp);
+	buffer[size] = '\0';
+	fclose(fp);
+	return buffer;
+}
+
+void  write_file(char* file, char* content){
+	FILE* fp = fopen(file, "w");
+	if(!fp){
+		fprintf(stderr, "Cannot open file: %s\n", strerror(errno));
+		exit(errno);
+	}
+	fwrite(content, sizeof(char), strlen(content), fp);
+	fclose(fp);
+}
+
+void auto_rebuild(char* src_name, char* output_name){
+	if(access(HASH_FILE, F_OK) != 0){
+		char* sha = get_sha256_from_file(src_name);
+		write_file(HASH_FILE, sha);
+		return;
+	}
+	char* current = strdup(get_sha256_from_file(src_name));
+	char* old	  = read_file(HASH_FILE);
+
+	if(memcmp(old, current, strlen(old)) != 0){
+		printf("[WARNING]: File differs, rebuilding system\n");
+		Cmd cmd = {0};
+		cmd_set(cmd, "gcc", src_name, "-o", output_name);
+		wait_on_process(spawn_process(&cmd));
+		char* sha = get_sha256_from_file(src_name);
+		write_file(HASH_FILE, sha);
+
+		set_static_path(get_current_path());
+		cmd_set(cmd, output_name);
+		wait_on_process(spawn_process(&cmd));
+		exit(0);
+	}
+	return;
+}
+
 #endif
-
-
 #endif // BUILDER_H

@@ -3,6 +3,7 @@
 
 
 int main(){
+	auto_rebuild("example.c", "example");
 	printf("Testing build system\n");
 	Cmd cmd[2] = {0};
 	Cmd_List cmd_list = {0};
@@ -12,6 +13,14 @@ int main(){
 	cmd_list_append(&cmd_list,&cmd[1]);
 
 	wait_on_process_list(spawn_process_list(&cmd_list));
-
+	printf("Testing sha generation for 'Test'\n");
+	// hashing data is stored in the builder's circular buffer, 
+	// if you need persistent data you must strdup-it
+	char* sha512 = strdup(get_sha512("Test"));
+	char* sha256 = strdup(get_sha256("Test"));
+	char* sha1 = strdup(get_sha1("Test"));
+	printf("sha512 of test: %s\n", sha512);
+	printf("sha256 of test: %s\n", sha256);
+	printf("sha1 of test: %s\n", sha1);
 	printf("Exiting build system\n");
 }
