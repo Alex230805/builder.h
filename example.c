@@ -3,6 +3,7 @@
 
 
 int main(){
+	/* WARNING: this depends on sha1 installed in your system */
 	auto_rebuild("example.c", "example");
 	
 	printf("Testing build system\n");
@@ -23,5 +24,11 @@ int main(){
 	printf("sha512 of test: %s\n", sha512);
 	printf("sha256 of test: %s\n", sha256);
 	printf("sha1 of test: %s\n", sha1);
+	printf("Testing folder grep content: \n");
+	Folder* f = get_dir_content("./");
+	for(size_t i=0;i<f->tracker; i++){
+		printf("%s\n", f->contents_name[i]);
+	}
+
 	printf("Exiting build system\n");
 }

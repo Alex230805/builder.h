@@ -11,12 +11,14 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include <string.h>
+#include <dirent.h>
 
 #define INIT_P_RETURN 69420
 #define DEFAULT_CMD_LIST_SIZE 4
 #define DEFAULT_PATH_SIZE	512
 #define LOCAL_SIZE 1024*16
 #define HASH_FILE "./.builder_hash"
+#define DEFAULT_FOLDER_SIZE 16
 
 #define cmd_set(cmd, ...)\
 		cmd_set_imp((&cmd), (char* []){__VA_ARGS__, NULL});
@@ -53,6 +55,12 @@ typedef struct{
 	size_t size;
 }Path;
 
+
+typedef struct{
+	char** contents_name; 
+	size_t size;
+	size_t tracker;
+}Folder; 
 
 static char local_mem[LOCAL_SIZE] =  {0};
 static size_t local_tracker =	0;
@@ -95,6 +103,8 @@ char* get_sha1_from_file(char* file);
 
 char* read_file(char* file);
 void  write_file(char* file, char* content);
+
+Folder* get_dir_content(char* path);
 
 void auto_rebuild(char* src, char* output_name);
 
@@ -372,6 +382,7 @@ char* get_sha512(char* string){
 	sprintf(stdin_buffer, "sha512 -s ");
 	strcat(stdin_buffer, string);
 	FILE* s = popen(stdin_buffer, "r");
+	if(s == NULL) return NULL;
 	fseek(s, 0, SEEK_END);
 	size_t size = ftell(s);
 	fseek(s, 0, SEEK_SET);
@@ -386,6 +397,7 @@ char* get_sha512_from_file(char* file){
 	sprintf(stdin_buffer, "sha512 --quiet ");
 	strcat(stdin_buffer, file);
 	FILE* s = popen(stdin_buffer, "r");
+	if(s == NULL) return NULL;
 	fseek(s, 0, SEEK_END);
 	size_t size = ftell(s);
 	fseek(s, 0, SEEK_SET);
@@ -400,6 +412,7 @@ char* get_sha256(char* string){
 	sprintf(stdin_buffer, "sha256 -s ");
 	strcat(stdin_buffer, string);
 	FILE* s = popen(stdin_buffer, "r");
+	if(s == NULL) return NULL;
 	fseek(s, 0, SEEK_END);
 	size_t size = ftell(s);
 	fseek(s, 0, SEEK_SET);
@@ -414,6 +427,7 @@ char* get_sha256_from_file(char* file){
 	sprintf(stdin_buffer, "sha256 --quiet ");
 	strcat(stdin_buffer, file);
 	FILE* s = popen(stdin_buffer, "r");
+	if(s == NULL) return NULL;
 	fseek(s, 0, SEEK_END);
 	size_t size = ftell(s);
 	fseek(s, 0, SEEK_SET);
@@ -428,6 +442,7 @@ char* get_sha1(char* string){
 	sprintf(stdin_buffer, "sha1 -s ");
 	strcat(stdin_buffer, string);
 	FILE* s = popen(stdin_buffer, "r");
+	if(s == NULL) return NULL;
 	fseek(s, 0, SEEK_END);
 	size_t size = ftell(s);
 	fseek(s, 0, SEEK_SET);
@@ -442,6 +457,7 @@ char* get_sha1_from_file(char* file){
 	sprintf(stdin_buffer, "sha1 --quiet ");
 	strcat(stdin_buffer, file);
 	FILE* s = popen(stdin_buffer, "r");
+	if(s == NULL) return NULL;
 	fseek(s, 0, SEEK_END);
 	size_t size = ftell(s);
 	fseek(s, 0, SEEK_SET);
@@ -475,6 +491,36 @@ void  write_file(char* file, char* content){
 	}
 	fwrite(content, sizeof(char), strlen(content), fp);
 	fclose(fp);
+}
+
+
+Folder* get_dir_content(char* path){
+	Folder* f = (Folder*)local_alloc(sizeof(Folder));
+	f->tracker = 0;
+	f->size = DEFAULT_FOLDER_SIZE;
+	f->contents_name = (char**)local_alloc(sizeof(char*)*f->size);
+
+	DIR* dir = NULL;
+	struct dirent *e = NULL;
+	dir = opendir(path);
+	if(dir == NULL) return NULL;
+	while((e = readdir(dir)) != NULL){
+		char* name = (char*)local_alloc(sizeof(char)*strlen(e->d_name)+1);
+		strcpy(name, e->d_name);
+		name[strlen(e->d_name)] = '\0';
+		f->contents_name[f->tracker] = name;
+		f->tracker += 1;
+		if(f->tracker >= f->size){
+			char** old = f->contents_name;
+			f->contents_name = (char**)local_alloc(sizeof(char*)*f->size*2);
+			f->size *= 2;
+			for(size_t i=0;i<f->tracker;i++){
+				f->contents_name[i] = old[i];
+			}
+		}
+	}
+	closedir(dir);
+	return f;
 }
 
 void auto_rebuild(char* src_name, char* output_name){
