@@ -49,10 +49,13 @@ typedef struct{
 	size_t size;
 }Process_View;
 
+// path is absolute by default, set flag 'not_abs' manually or use the function 'path_set_mode()'
 typedef struct{
 	char** tree;
 	size_t depth;
 	size_t size;
+	char*  raw_path;
+	bool not_abs;
 }Path;
 
 
@@ -75,6 +78,9 @@ void set_static_path(const char* static_path);
 bool search_default_valid_path(char* executable);
 
 Path* path_chop(char* path);
+void path_set_mode(Path* p, bool p_type);
+void path_append_to(Path* p, char* folder);
+
 void path_render(char* path, Path* p);
 void path_append(const char* dir);
 char *path_compose(char* path, char* string);
@@ -105,6 +111,8 @@ char* read_file(char* file);
 void  write_file(char* file, char* content);
 
 Folder* get_dir_content(char* path);
+Folder* grep_from_dir(char* path, char* needle);
+
 
 void auto_rebuild(char* src, char* output_name);
 
@@ -182,16 +190,82 @@ Path* path_chop(char* path){
 	int tracker = 0;
 	for(i = 0;i<p->depth; i++){
 		n = strchr(cache, '/');
-		int len = n - cache;
-		if(len > 1){
+		size_t len = n - cache;
+		if(len > 0){
 			p->tree[tracker] = (char*)local_alloc(sizeof(char)*len);	
 			memcpy(p->tree[tracker], cache, sizeof(char)*len);
+			printf("%s\n", p->tree[tracker]);
 			tracker += 1;
 		}
 		cache = n+1;
 	}
 	p->depth = tracker;
+	size_t render_size = 0;
+	for(size_t i=0;i<p->depth; i++){
+		render_size += strlen(p->tree[i]);
+	}
+	if(p->raw_path != NULL){
+		free(p->raw_path);
+		p->raw_path = NULL;
+	}
+	p->raw_path = (char*)malloc(sizeof(char)*render_size);
+	size_t s = 0;
+	if(!p->not_abs){
+		strcat(p->raw_path, "/");
+		s += 1;
+	}
+	for(int i=s;i<p->depth; i++){
+		strcat(p->raw_path, p->tree[i]);
+		if(i+1 < p->depth){
+			strcat(p->raw_path, "/");	
+		}
+	}
+	p->raw_path[render_size] = '\0';
 	return p;
+}
+
+void path_append_to(Path* p, char* folder){
+	if(p == NULL || p->size < DEFAULT_PATH_SIZE){
+		p->depth = 0;
+		p->size = DEFAULT_PATH_SIZE;
+		p->tree = (char**)local_alloc(sizeof(char*)*p->size);
+	}
+	if(p->depth+1 > p->size){
+		char** old = p->tree;
+		p->tree = (char**)local_alloc(sizeof(char*)*p->size*2);
+		p->size *= 2;
+		for(size_t i=0;i<p->depth; i++){
+			p->tree[i] = old[i];
+		}
+	}
+	p->tree[p->depth] = strdup(folder);
+	p->depth += 1;
+	size_t render_size = 0;
+	for(size_t i=0;i<p->depth; i++){
+		render_size += strlen(p->tree[i]);
+	}
+	render_size += p->depth + 1;
+	if(p->raw_path != NULL){
+		free(p->raw_path);
+		p->raw_path = NULL;
+	}
+	p->raw_path = (char*)malloc(sizeof(char)*render_size);
+	size_t s = 0;
+	if(!p->not_abs){
+		strcat(p->raw_path, "/");
+		s += 1;
+	}
+	for(int i=s;i<p->depth; i++){
+		strcat(p->raw_path, p->tree[i]);
+		if(i+1 < p->depth){
+			strcat(p->raw_path, "/");	
+		}
+	}
+	p->raw_path[render_size] = '\0';
+}
+
+void path_set_mode(Path* p, bool p_type){
+	p->not_abs = p_type;
 }
 
 void path_render(char* path, Path* p){
@@ -378,9 +452,18 @@ void wait_on_process_list(Process_View* procs){
 
 
 char* get_sha512(char* string){
-	char stdin_buffer[128];
+#ifdef _WIN32 
+	return NULL; // not implemented yet
+#endif
+	char stdin_buffer[1024];
+#ifdef __APPLE__
 	sprintf(stdin_buffer, "sha512 -s ");
+	strcat(stdin_buffer, file);
+#elif __linux__
+	sprintf(stdin_buffer, "echo \"");
 	strcat(stdin_buffer, string);
+	strcat(stdin_buffer, "\" | sha512sum");
+#endif
 	FILE* s = popen(stdin_buffer, "r");
 	if(s == NULL) return NULL;
 	fseek(s, 0, SEEK_END);
@@ -388,13 +471,24 @@ char* get_sha512(char* string){
 	fseek(s, 0, SEEK_SET);
 	char* hash = (char*)local_alloc(sizeof(char)*size);
 	fread(hash, sizeof(char), size, s);
+#ifdef __linux 
+	*(strchr(hash, ' ')) = '\0';
+#elif
 	*(strchr(hash, '\n')) = '\0';
+#endif
 	return hash;
 }
 
 char* get_sha512_from_file(char* file){
-	char stdin_buffer[128];
+#ifdef _WIN32 
+	return NULL; // not implemented yet
+#endif
+	char stdin_buffer[1024];
+#ifdef __APPLE__
 	sprintf(stdin_buffer, "sha512 --quiet ");
+#elif __linux__
+	sprintf(stdin_buffer, "sha512sum ");
+#endif
 	strcat(stdin_buffer, file);
 	FILE* s = popen(stdin_buffer, "r");
 	if(s == NULL) return NULL;
@@ -403,14 +497,27 @@ char* get_sha512_from_file(char* file){
 	fseek(s, 0, SEEK_SET);
 	char* hash = (char*)local_alloc(sizeof(char)*size);
 	fread(hash, sizeof(char), size, s);
+#ifdef __linux 
+	*(strchr(hash, ' ')) = '\0';
+#elif
 	*(strchr(hash, '\n')) = '\0';
+#endif
 	return hash;
 }
 
 char* get_sha256(char* string){
-	char stdin_buffer[128];
+#ifdef _WIN32 
+	return NULL; // not implemented yet
+#endif
+	char stdin_buffer[1024];
+#ifdef __APPLE__
 	sprintf(stdin_buffer, "sha256 -s ");
+	strcat(stdin_buffer, file);
+#elif __linux__
+	sprintf(stdin_buffer, "echo \"");
 	strcat(stdin_buffer, string);
+	strcat(stdin_buffer, "\" | sha256sum");
+#endif
 	FILE* s = popen(stdin_buffer, "r");
 	if(s == NULL) return NULL;
 	fseek(s, 0, SEEK_END);
@@ -418,13 +525,24 @@ char* get_sha256(char* string){
 	fseek(s, 0, SEEK_SET);
 	char* hash = (char*)local_alloc(sizeof(char)*size);
 	fread(hash, sizeof(char), size, s);
+#ifdef __linux 
+	*(strchr(hash, ' ')) = '\0';
+#elif
 	*(strchr(hash, '\n')) = '\0';
+#endif
 	return hash;
 }
 
 char* get_sha256_from_file(char* file){
-	char stdin_buffer[128];
+#ifdef _WIN32 
+	return NULL; // not implemented yet
+#endif
+	char stdin_buffer[1024];
+#ifdef __APPLE__
 	sprintf(stdin_buffer, "sha256 --quiet ");
+#elif __linux__
+	sprintf(stdin_buffer, "sha256sum ");
+#endif
 	strcat(stdin_buffer, file);
 	FILE* s = popen(stdin_buffer, "r");
 	if(s == NULL) return NULL;
@@ -433,14 +551,27 @@ char* get_sha256_from_file(char* file){
 	fseek(s, 0, SEEK_SET);
 	char* hash = (char*)local_alloc(sizeof(char)*size);
 	fread(hash, sizeof(char), size, s);
+#ifdef __linux 
+	*(strchr(hash, ' ')) = '\0';
+#elif
 	*(strchr(hash, '\n')) = '\0';
+#endif
 	return hash;
 }
 
 char* get_sha1(char* string){
-	char stdin_buffer[128];
+#ifdef _WIN32 
+	return NULL; // not implemented yet
+#endif
+	char stdin_buffer[1024];
+#ifdef __APPLE__
 	sprintf(stdin_buffer, "sha1 -s ");
+	strcat(stdin_buffer, file);
+#elif __linux__
+	sprintf(stdin_buffer, "echo \"");
 	strcat(stdin_buffer, string);
+	strcat(stdin_buffer, "\" | sha1sum");
+#endif
 	FILE* s = popen(stdin_buffer, "r");
 	if(s == NULL) return NULL;
 	fseek(s, 0, SEEK_END);
@@ -448,13 +579,24 @@ char* get_sha1(char* string){
 	fseek(s, 0, SEEK_SET);
 	char* hash = (char*)local_alloc(sizeof(char)*size);
 	fread(hash, sizeof(char), size, s);
+#ifdef __linux 
+	*(strchr(hash, ' ')) = '\0';
+#elif
 	*(strchr(hash, '\n')) = '\0';
+#endif
 	return hash;
 }
 
 char* get_sha1_from_file(char* file){
-	char stdin_buffer[128];
+#ifdef _WIN32
+	return NULL; // not implemented yet
+#endif 
+	char stdin_buffer[1024];
+#ifdef __APPLE__
 	sprintf(stdin_buffer, "sha1 --quiet ");
+#elif __linux__
+	sprintf(stdin_buffer, "sha1sum ");
+#endif
 	strcat(stdin_buffer, file);
 	FILE* s = popen(stdin_buffer, "r");
 	if(s == NULL) return NULL;
@@ -463,7 +605,11 @@ char* get_sha1_from_file(char* file){
 	fseek(s, 0, SEEK_SET);
 	char* hash = (char*)local_alloc(sizeof(char)*size);
 	fread(hash, sizeof(char), size, s);
+#ifdef __linux 
+	*(strchr(hash, ' ')) = '\0';
+#elif
 	*(strchr(hash, '\n')) = '\0';
+#endif
 	return hash;
 }
 
@@ -521,6 +667,22 @@ Folder* get_dir_content(char* path){
 	}
 	closedir(dir);
 	return f;
+}
+
+
+Folder* grep_from_dir(char* path, char* needle){
+	Folder* s = get_dir_content(path);
+	char** buffer = (char**)local_alloc(sizeof(char*)*s->tracker);
+	size_t nt = 0;
+	for(size_t i=0;i<s->tracker; i++){
+		if(strstr(s->contents_name[i], needle) != NULL){
+			buffer[nt] = s->contents_name[i];
+			nt += 1;
+		}
+	}
+	s->contents_name = buffer;
+	s->tracker = nt;
+	return s;
 }
 
 void auto_rebuild(char* src_name, char* output_name){

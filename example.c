@@ -18,17 +18,31 @@ int main(){
 	printf("Testing sha generation for 'Test'\n");
 	// hashing data is stored in the builder's circular buffer, 
 	// if you need persistent data you must strdup-it
+	
 	char* sha512 = strdup(get_sha512("Test"));
 	char* sha256 = strdup(get_sha256("Test"));
 	char* sha1 = strdup(get_sha1("Test"));
 	printf("sha512 of test: %s\n", sha512);
 	printf("sha256 of test: %s\n", sha256);
 	printf("sha1 of test: %s\n", sha1);
-	printf("Testing folder grep content: \n");
+
+
+	printf("Testing folder ls content: \n");
 	Folder* f = get_dir_content("./");
 	for(size_t i=0;i<f->tracker; i++){
 		printf("%s\n", f->contents_name[i]);
 	}
+	printf("Testing folder grep content: \n");
+	f = grep_from_dir("./", "E");
+	for(size_t i=0;i<f->tracker; i++){
+		printf("%s\n", f->contents_name[i]);
+	}
+	printf("Custom path composition: \n");
+	char* current_p = get_current_path();
+	printf("%s\n", current_p);
+	Path* p = path_chop(current_p);
+	path_append_to(p, f->contents_name[0]);
+	printf("%s\n", p->raw_path);
 
 	printf("Exiting build system\n");
 }
