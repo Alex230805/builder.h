@@ -171,7 +171,7 @@ char* get_current_path(){
 	fseek(fp,0, SEEK_END);
 	int size = ftell(fp);
 	fseek(fp, 0, SEEK_SET);
-	char* p = (char*)local_alloc(sizeof(char)*size+1);
+	char* p = (char*)malloc(sizeof(char)*size+1);
 	fread(p, sizeof(char), size, fp);
 	p[size] = '\0';
 	*(strchr(p, '\n')) = '\0';
@@ -190,11 +190,12 @@ Path* path_chop(char* path){
 	int tracker = 0;
 	for(i = 0;i<p->depth; i++){
 		n = strchr(cache, '/');
+		if(n == NULL) n = strchr(cache, '\0');
 		size_t len = n - cache;
 		if(len > 0){
-			p->tree[tracker] = (char*)local_alloc(sizeof(char)*len);	
+			p->tree[tracker] = (char*)local_alloc(sizeof(char)*len+1);	
 			memcpy(p->tree[tracker], cache, sizeof(char)*len);
-			printf("%s\n", p->tree[tracker]);
+			p->tree[tracker][len] = '\0';
 			tracker += 1;
 		}
 		cache = n+1;
@@ -209,18 +210,18 @@ Path* path_chop(char* path){
 		p->raw_path = NULL;
 	}
 	p->raw_path = (char*)malloc(sizeof(char)*render_size);
+	p->raw_path[0] = '\0';
 	size_t s = 0;
 	if(!p->not_abs){
 		strcat(p->raw_path, "/");
 		s += 1;
 	}
-	for(int i=s;i<p->depth; i++){
+	for(int i=0;i<p->depth; i++){
 		strcat(p->raw_path, p->tree[i]);
 		if(i+1 < p->depth){
 			strcat(p->raw_path, "/");	
 		}
 	}
-	p->raw_path[render_size] = '\0';
 	return p;
 }
 
@@ -244,24 +245,23 @@ void path_append_to(Path* p, char* folder){
 	for(size_t i=0;i<p->depth; i++){
 		render_size += strlen(p->tree[i]);
 	}
-	render_size += p->depth + 1;
 	if(p->raw_path != NULL){
 		free(p->raw_path);
 		p->raw_path = NULL;
 	}
 	p->raw_path = (char*)malloc(sizeof(char)*render_size);
+	p->raw_path[0] = '\0';
 	size_t s = 0;
 	if(!p->not_abs){
 		strcat(p->raw_path, "/");
 		s += 1;
 	}
-	for(int i=s;i<p->depth; i++){
+	for(int i=0;i<p->depth; i++){
 		strcat(p->raw_path, p->tree[i]);
 		if(i+1 < p->depth){
 			strcat(p->raw_path, "/");	
 		}
 	}
-	p->raw_path[render_size] = '\0';
 }
 
 void path_set_mode(Path* p, bool p_type){
@@ -458,7 +458,7 @@ char* get_sha512(char* string){
 	char stdin_buffer[1024];
 #ifdef __APPLE__
 	sprintf(stdin_buffer, "sha512 -s ");
-	strcat(stdin_buffer, file);
+	strcat(stdin_buffer, string);
 #elif __linux__
 	sprintf(stdin_buffer, "echo \"");
 	strcat(stdin_buffer, string);
@@ -473,7 +473,7 @@ char* get_sha512(char* string){
 	fread(hash, sizeof(char), size, s);
 #ifdef __linux 
 	*(strchr(hash, ' ')) = '\0';
-#elif
+#else
 	*(strchr(hash, '\n')) = '\0';
 #endif
 	return hash;
@@ -499,7 +499,7 @@ char* get_sha512_from_file(char* file){
 	fread(hash, sizeof(char), size, s);
 #ifdef __linux 
 	*(strchr(hash, ' ')) = '\0';
-#elif
+#else
 	*(strchr(hash, '\n')) = '\0';
 #endif
 	return hash;
@@ -512,7 +512,7 @@ char* get_sha256(char* string){
 	char stdin_buffer[1024];
 #ifdef __APPLE__
 	sprintf(stdin_buffer, "sha256 -s ");
-	strcat(stdin_buffer, file);
+	strcat(stdin_buffer, string);
 #elif __linux__
 	sprintf(stdin_buffer, "echo \"");
 	strcat(stdin_buffer, string);
@@ -527,7 +527,7 @@ char* get_sha256(char* string){
 	fread(hash, sizeof(char), size, s);
 #ifdef __linux 
 	*(strchr(hash, ' ')) = '\0';
-#elif
+#else
 	*(strchr(hash, '\n')) = '\0';
 #endif
 	return hash;
@@ -553,7 +553,7 @@ char* get_sha256_from_file(char* file){
 	fread(hash, sizeof(char), size, s);
 #ifdef __linux 
 	*(strchr(hash, ' ')) = '\0';
-#elif
+#else
 	*(strchr(hash, '\n')) = '\0';
 #endif
 	return hash;
@@ -566,7 +566,7 @@ char* get_sha1(char* string){
 	char stdin_buffer[1024];
 #ifdef __APPLE__
 	sprintf(stdin_buffer, "sha1 -s ");
-	strcat(stdin_buffer, file);
+	strcat(stdin_buffer, string);
 #elif __linux__
 	sprintf(stdin_buffer, "echo \"");
 	strcat(stdin_buffer, string);
@@ -581,7 +581,7 @@ char* get_sha1(char* string){
 	fread(hash, sizeof(char), size, s);
 #ifdef __linux 
 	*(strchr(hash, ' ')) = '\0';
-#elif
+#else
 	*(strchr(hash, '\n')) = '\0';
 #endif
 	return hash;
@@ -607,7 +607,7 @@ char* get_sha1_from_file(char* file){
 	fread(hash, sizeof(char), size, s);
 #ifdef __linux 
 	*(strchr(hash, ' ')) = '\0';
-#elif
+#else
 	*(strchr(hash, '\n')) = '\0';
 #endif
 	return hash;

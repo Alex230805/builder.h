@@ -39,10 +39,9 @@ int main(){
 	}
 	printf("Custom path composition: \n");
 	char* current_p = get_current_path();
-	printf("%s\n", current_p);
+	printf("Current path: %s\n", current_p);
 	Path* p = path_chop(current_p);
 	path_append_to(p, f->contents_name[0]);
-	printf("%s\n", p->raw_path);
-
+	printf("New path: %s\n", p->raw_path);
 	printf("Exiting build system\n");
 }
