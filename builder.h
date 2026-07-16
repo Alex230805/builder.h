@@ -16,7 +16,7 @@
 #define INIT_P_RETURN 69420
 #define DEFAULT_CMD_LIST_SIZE 4
 #define DEFAULT_PATH_SIZE	512
-#define LOCAL_SIZE 1024*16
+#define LOCAL_SIZE 1024*64
 #define HASH_FILE "./.builder_hash"
 #define DEFAULT_FOLDER_SIZE 16
 
@@ -65,13 +65,18 @@ typedef struct{
 	size_t tracker;
 }Folder; 
 
-static char local_mem[LOCAL_SIZE] =  {0};
+static char* local_mem[LOCAL_SIZE] =  {0};
 static size_t local_tracker =	0;
 static size_t local_size =		LOCAL_SIZE;
 
+static char static_mem[LOCAL_SIZE] = {0};
+static size_t static_tracker = 0;
+static size_t static_size = LOCAL_SIZE;
+
 void cmd_set_imp(Cmd* cmd, char* list[]);
 void* local_alloc(size_t size);
-void local_alloc_rewind(size_t size);
+void local_free();
+void* static_alloc(size_t size);
 
 char* get_current_path();
 void set_static_path(const char* static_path);
@@ -128,19 +133,26 @@ void cmd_set_imp(Cmd* cmd, char* list[]){
 }
 
 void* local_alloc(size_t size){
-	if(size+local_tracker >= local_size) local_tracker = 0;
-	void* ptr = &local_mem[local_tracker];
-	local_tracker += size;
 	if(local_tracker >= local_size) local_tracker = 0;
+	local_mem[local_tracker] = (char*)malloc(size);
+	void* ptr = local_mem[local_tracker];
+	local_tracker += 1;
 	return ptr;
 }
 
-void local_alloc_rewind(size_t size){
-	if((int)local_tracker - (int)size < 0) {
-		local_tracker = 0;
-		return;
+void local_free(){
+	for(size_t i=0;i<local_tracker; i++){
+		free(local_mem[i]);
+		local_mem[i] = NULL;
 	}
-	local_tracker -= size;
+	local_tracker = 0;
+}
+
+void* static_alloc(size_t size){
+	if(static_tracker + size >= static_size) static_tracker = 0;
+	void* ptr = &static_mem[static_tracker];
+	static_tracker += size;	
+	return ptr;
 }
 
 void cmd_append(Cmd* cmd, char* string){
@@ -163,15 +175,14 @@ void cmd_append(Cmd* cmd, char* string){
 
 void set_static_path(const char* static_path){
 	path[0] = '\0';
-	strcpy(path, static_path);
+	memcpy(path, static_path, sizeof(char)*(strchr(static_path, '\0')+1-static_path));
 }
 
+
 char* get_current_path(){
+	size_t size = 2048;
 	FILE* fp = popen("echo $PWD", "r");
-	fseek(fp,0, SEEK_END);
-	int size = ftell(fp);
-	fseek(fp, 0, SEEK_SET);
-	char* p = (char*)malloc(sizeof(char)*size+1);
+	char* p = (char*)local_alloc(sizeof(char)*size+1);
 	fread(p, sizeof(char), size, fp);
 	p[size] = '\0';
 	*(strchr(p, '\n')) = '\0';
@@ -182,18 +193,24 @@ Path* path_chop(char* path){
 	char* n = NULL;
 	int i=0;
 	char* cache = path;
-	do{ n = strchr(path, '/'); i+=1; path  = n+1; }while(n != NULL);
+	do{ n = strchr(cache, '/'); i+=1; cache  = n+1; }while(n != NULL);
+	cache = path;
 	Path* p = (Path*)local_alloc(sizeof(Path));
 	p->depth = i;
 	p->size = DEFAULT_PATH_SIZE;
 	p->tree = (char**)local_alloc(sizeof(char*)*p->size);
-	int tracker = 0;
-	for(i = 0;i<p->depth; i++){
+	p->raw_path = NULL;
+	bool end = false;
+	size_t tracker = 0;
+	for(i = 0;i<p->depth && !end; i++){
 		n = strchr(cache, '/');
-		if(n == NULL) n = strchr(cache, '\0');
-		size_t len = n - cache;
+		if(n == NULL) {
+			n = strchr(cache, '\0');
+			end = true;
+		}
+		int len = n - cache;
 		if(len > 0){
-			p->tree[tracker] = (char*)local_alloc(sizeof(char)*len+1);	
+			p->tree[tracker] = (char*)malloc(sizeof(char)*len+1);	
 			memcpy(p->tree[tracker], cache, sizeof(char)*len);
 			p->tree[tracker][len] = '\0';
 			tracker += 1;
@@ -205,11 +222,8 @@ Path* path_chop(char* path){
 	for(size_t i=0;i<p->depth; i++){
 		render_size += strlen(p->tree[i]);
 	}
-	if(p->raw_path != NULL){
-		free(p->raw_path);
-		p->raw_path = NULL;
-	}
-	p->raw_path = (char*)malloc(sizeof(char)*render_size);
+	render_size*=2;
+	p->raw_path = (char*)local_alloc(sizeof(char)*render_size);
 	p->raw_path[0] = '\0';
 	size_t s = 0;
 	if(!p->not_abs){
@@ -249,7 +263,8 @@ void path_append_to(Path* p, char* folder){
 		free(p->raw_path);
 		p->raw_path = NULL;
 	}
-	p->raw_path = (char*)malloc(sizeof(char)*render_size);
+	render_size*=2;
+	p->raw_path = (char*)local_alloc(sizeof(char)*render_size);
 	p->raw_path[0] = '\0';
 	size_t s = 0;
 	if(!p->not_abs){
@@ -325,7 +340,7 @@ bool search_default_valid_path(char* executable){
 	*(strchr(buffer, '\n')) = '\0';
 	
 	char* c = strchr(buffer, ':');
-	char* pos = (char*)malloc(sizeof(char)*DEFAULT_PATH_SIZE);
+	char* pos = (char*)local_alloc(sizeof(char)*DEFAULT_PATH_SIZE);
 
 	bool end = false;
 	while(!end){
@@ -346,7 +361,6 @@ bool search_default_valid_path(char* executable){
 		}
 	}
 
-	local_alloc_rewind((sizeof(char)*size)+1);
 	free(pos);
 	pos = NULL;
 	return end;
@@ -403,8 +417,8 @@ static void capture_return(Process* process){
 }
 
 Process* spawn_process(Cmd* cmd){
-	pthread_t* monitor = (pthread_t*)local_alloc(sizeof(pthread_t));
-	Process* proc = (Process*)local_alloc(sizeof(Process));
+	pthread_t* monitor = (pthread_t*)static_alloc(sizeof(pthread_t));
+	Process* proc = (Process*)static_alloc(sizeof(Process));
 	pid_t p = cmd_execute(cmd);
 	if(p > 0){
 		proc->pid = p;
@@ -417,8 +431,8 @@ Process* spawn_process(Cmd* cmd){
 }
 
 Process_View* spawn_process_list(Cmd_List* cmd){
-	Process_View* procs = (Process_View*)local_alloc(sizeof(Process_View));
-	procs->array = (Process**)local_alloc(sizeof(Process*)*cmd->tracker);
+	Process_View* procs = (Process_View*)static_alloc(sizeof(Process_View));
+	procs->array = (Process**)static_alloc(sizeof(Process*)*cmd->tracker);
 	procs->size = cmd->tracker;
 
 	for(int i=0;i<cmd->tracker; i++){
@@ -466,11 +480,8 @@ char* get_sha512(char* string){
 #endif
 	FILE* s = popen(stdin_buffer, "r");
 	if(s == NULL) return NULL;
-	fseek(s, 0, SEEK_END);
-	size_t size = ftell(s);
-	fseek(s, 0, SEEK_SET);
-	char* hash = (char*)local_alloc(sizeof(char)*size);
-	fread(hash, sizeof(char), size, s);
+	char* hash = (char*)local_alloc(sizeof(char)*1024);
+	fread(hash, sizeof(char), 1024, s);
 #ifdef __linux 
 	*(strchr(hash, ' ')) = '\0';
 #else
@@ -492,11 +503,8 @@ char* get_sha512_from_file(char* file){
 	strcat(stdin_buffer, file);
 	FILE* s = popen(stdin_buffer, "r");
 	if(s == NULL) return NULL;
-	fseek(s, 0, SEEK_END);
-	size_t size = ftell(s);
-	fseek(s, 0, SEEK_SET);
-	char* hash = (char*)local_alloc(sizeof(char)*size);
-	fread(hash, sizeof(char), size, s);
+	char* hash = (char*)local_alloc(sizeof(char)*1024);
+	fread(hash, sizeof(char), 1024, s);
 #ifdef __linux 
 	*(strchr(hash, ' ')) = '\0';
 #else
@@ -520,11 +528,8 @@ char* get_sha256(char* string){
 #endif
 	FILE* s = popen(stdin_buffer, "r");
 	if(s == NULL) return NULL;
-	fseek(s, 0, SEEK_END);
-	size_t size = ftell(s);
-	fseek(s, 0, SEEK_SET);
-	char* hash = (char*)local_alloc(sizeof(char)*size);
-	fread(hash, sizeof(char), size, s);
+	char* hash = (char*)local_alloc(sizeof(char)*1024);
+	fread(hash, sizeof(char), 1024, s);
 #ifdef __linux 
 	*(strchr(hash, ' ')) = '\0';
 #else
@@ -546,11 +551,8 @@ char* get_sha256_from_file(char* file){
 	strcat(stdin_buffer, file);
 	FILE* s = popen(stdin_buffer, "r");
 	if(s == NULL) return NULL;
-	fseek(s, 0, SEEK_END);
-	size_t size = ftell(s);
-	fseek(s, 0, SEEK_SET);
-	char* hash = (char*)local_alloc(sizeof(char)*size);
-	fread(hash, sizeof(char), size, s);
+	char* hash = (char*)local_alloc(sizeof(char)*1024);
+	fread(hash, sizeof(char), 1024, s);
 #ifdef __linux 
 	*(strchr(hash, ' ')) = '\0';
 #else
@@ -574,11 +576,8 @@ char* get_sha1(char* string){
 #endif
 	FILE* s = popen(stdin_buffer, "r");
 	if(s == NULL) return NULL;
-	fseek(s, 0, SEEK_END);
-	size_t size = ftell(s);
-	fseek(s, 0, SEEK_SET);
-	char* hash = (char*)local_alloc(sizeof(char)*size);
-	fread(hash, sizeof(char), size, s);
+	char* hash = (char*)local_alloc(sizeof(char)*1024);
+	fread(hash, sizeof(char), 1024, s);
 #ifdef __linux 
 	*(strchr(hash, ' ')) = '\0';
 #else
@@ -600,11 +599,8 @@ char* get_sha1_from_file(char* file){
 	strcat(stdin_buffer, file);
 	FILE* s = popen(stdin_buffer, "r");
 	if(s == NULL) return NULL;
-	fseek(s, 0, SEEK_END);
-	size_t size = ftell(s);
-	fseek(s, 0, SEEK_SET);
-	char* hash = (char*)local_alloc(sizeof(char)*size);
-	fread(hash, sizeof(char), size, s);
+	char* hash = (char*)local_alloc(sizeof(char)*1024);
+	fread(hash, sizeof(char), 1024, s);
 #ifdef __linux 
 	*(strchr(hash, ' ')) = '\0';
 #else
@@ -622,7 +618,7 @@ char* read_file(char* file){
 	fseek(fp, 0, SEEK_END);
 	int size = ftell(fp);
 	fseek(fp, 0, SEEK_SET);
-	char* buffer = (char*)malloc(sizeof(char)*size+1);
+	char* buffer = (char*)local_alloc(sizeof(char)*size+1);
 	fread(buffer, sizeof(char), size, fp);
 	buffer[size] = '\0';
 	fclose(fp);
@@ -691,7 +687,7 @@ void auto_rebuild(char* src_name, char* output_name){
 		write_file(HASH_FILE, sha);
 		return;
 	}
-	char* current = strdup(get_sha256_from_file(src_name));
+	char* current = get_sha256_from_file(src_name);
 	char* old	  = read_file(HASH_FILE);
 
 	if(memcmp(old, current, strlen(old)) != 0){
