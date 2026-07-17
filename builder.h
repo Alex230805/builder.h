@@ -339,7 +339,7 @@ void cmd_list_append(Cmd_List* list, Cmd* cmd){
 
 bool search_default_valid_path(char* executable){
 	char* buffer = NULL;
-	size_t size = 2048;
+	size_t size = 4096;
 	FILE* fp = popen("echo $PATH", "r");
 	buffer = (char*)local_alloc((sizeof(char)*size)+1);
 
