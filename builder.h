@@ -23,6 +23,19 @@
 #define cmd_set(cmd, ...)\
 		cmd_set_imp((&cmd), (char* []){__VA_ARGS__, NULL});
 
+#ifdef __APPLE__
+	#define MACOS true
+#else 
+	#define MACOS false
+#endif
+
+#ifdef __linux
+	#define LINUX true
+#else 
+	#define LINUX false
+#endif
+
+#define WIN32 false // not supported yet
 
 static char path[DEFAULT_PATH_SIZE] = {0}; // main path, used to spawn processes from their location
 
@@ -186,6 +199,7 @@ char* get_current_path(){
 	fread(p, sizeof(char), size, fp);
 	p[size] = '\0';
 	*(strchr(p, '\n')) = '\0';
+	pclose(fp);
 	return p;
 }
 
@@ -259,10 +273,6 @@ void path_append_to(Path* p, char* folder){
 	for(size_t i=0;i<p->depth; i++){
 		render_size += strlen(p->tree[i]);
 	}
-	if(p->raw_path != NULL){
-		free(p->raw_path);
-		p->raw_path = NULL;
-	}
 	render_size*=2;
 	p->raw_path = (char*)local_alloc(sizeof(char)*render_size);
 	p->raw_path[0] = '\0';
@@ -329,16 +339,14 @@ void cmd_list_append(Cmd_List* list, Cmd* cmd){
 
 bool search_default_valid_path(char* executable){
 	char* buffer = NULL;
+	size_t size = 2048;
 	FILE* fp = popen("echo $PATH", "r");
-	fseek(fp, 0, SEEK_END);
-	int size = ftell(fp);
-	fseek(fp, 0, SEEK_SET);
 	buffer = (char*)local_alloc((sizeof(char)*size)+1);
 
 	fread(buffer, sizeof(char), size, fp);
 	buffer[size] = '\0';
 	*(strchr(buffer, '\n')) = '\0';
-	
+
 	char* c = strchr(buffer, ':');
 	char* pos = (char*)local_alloc(sizeof(char)*DEFAULT_PATH_SIZE);
 
@@ -360,9 +368,8 @@ bool search_default_valid_path(char* executable){
 			c = strchr(buffer, '\0');
 		}
 	}
-
-	free(pos);
 	pos = NULL;
+	pclose(fp);
 	return end;
 }
 
@@ -487,6 +494,7 @@ char* get_sha512(char* string){
 #else
 	*(strchr(hash, '\n')) = '\0';
 #endif
+	pclose(s);
 	return hash;
 }
 
@@ -510,6 +518,7 @@ char* get_sha512_from_file(char* file){
 #else
 	*(strchr(hash, '\n')) = '\0';
 #endif
+	pclose(s);
 	return hash;
 }
 
@@ -535,6 +544,7 @@ char* get_sha256(char* string){
 #else
 	*(strchr(hash, '\n')) = '\0';
 #endif
+	pclose(s);
 	return hash;
 }
 
@@ -558,6 +568,7 @@ char* get_sha256_from_file(char* file){
 #else
 	*(strchr(hash, '\n')) = '\0';
 #endif
+	pclose(s);
 	return hash;
 }
 
@@ -583,6 +594,7 @@ char* get_sha1(char* string){
 #else
 	*(strchr(hash, '\n')) = '\0';
 #endif
+	pclose(s);
 	return hash;
 }
 
@@ -606,6 +618,7 @@ char* get_sha1_from_file(char* file){
 #else
 	*(strchr(hash, '\n')) = '\0';
 #endif
+	pclose(s);
 	return hash;
 }
 

@@ -6,6 +6,13 @@ int main(){
 	/* WARNING: this depends on sha1 installed in your system */
 	auto_rebuild("example.c", "example");
 	printf("Testing build system\n");
+	if(MACOS){
+		printf("Current execution environment: macos\n");
+	}else if(LINUX){
+		printf("Current execution environment: linux\n");
+	}else{
+		printf("Current execution environment: unknown\n");
+	}
 	Cmd cmd[2] = {0};
 	Cmd_List cmd_list = {0};
 	cmd_set(cmd[0], "gcc", "-I./", "example.c", "-o", "out1");
@@ -32,7 +39,6 @@ int main(){
 	for(size_t i=0;i<f->tracker; i++){
 		printf("%s\n", f->contents_name[i]);
 	}
-
 	printf("Custom path composition\n");
 	char* current_p = get_current_path();
 	Path* p = path_chop(current_p);
