@@ -1,12 +1,12 @@
 # builder.h 
 
-builder.h is a simple header to create build script directly from C. It can handle asynch and synch building option by using simple command line struct to compose the desired command. <br>
-It can also act as a simple process spawner directly implemented in C in a **header only library**. <br>
+builder.h is a single header library made to create build scripts directly in C. It can handle async and synch building option, all by using simple command line struct to compose different commands. <br>
+It can act as a process spawner directly implemented in C. <br>
 
 
 ## How to build and use builder.h
 
-builder.h is a header only library, it include both the declaration and implementation and you can access the implementation of the functions by declaring **BUILDER_IMP** before including builder.h<br>
+builder.h is a header only library, it include both the declaration and implementation, and if you want to create a build script you must declare **BUILDER_IMP** before including *builder.h*: <br>
 
 ```C
 
@@ -14,25 +14,32 @@ builder.h is a header only library, it include both the declaration and implemen
 #include "builder.h"
 
 int main(){
+	auto_rebuild("build.c", "build");
     // code here
 }
 
 ```
+
+By creating a separate file, the compilation process for a build script comes down to a single compiler line:  
+
+```C
+
+cc build.c -o build // if we assume the build file is called build.c
+./build             // start build script 
+
+```
+
 <br>
 
-It's suggested to use builder.h in a standalone implementations ( for example in a file named *builder.c* ), in that way you can bootstrap the build system into an executable that can be launched to 
-begin with the compilation. <br><br>
-If an update to the build script is needed you can modify *builder.c* and bootstrap it again, after that the build of your project can begin.
+It's suggested to use builder.h in a standalone implementation ( for example in a file named *builder.c* ), after that to begin with the compilation you must bootstrap it at leat once ( if you don't use "auto_rebuild()" in your script you must bootstrap the script each time you modify it ). <br>
 
+## Why such system? 
 
-## Why using an integrated build system instead of makefile 
+With complex projects and rising complexity having a build system is almost mandatory, some developers use bash scripts, some use make file, with the only goal of **organise and control the build operation**. But having a build system has the disadvantage of introducing yet another dependency, which per se is not a bad thing, but it forces the client who want to build your project on relying on a **required** program in order to begin with the compilation.
 
-Having a build system for complex project is important and you can't avoid it if the complexity is growing fast, but that comes with the cost of having a separate program that can build your application, 
-for example by using **make** with a dedicated makefile. <br>
-You now have a dependency on **make** and require the build client to have this separate program installed before even begin with the compilation. <br><br>
+Builder.h is a library written in C that offer a toolkit to easily build projects, to execute code during compilation, while using a fully working programming language. With that **in order to build your project you just need a C compiler, that's it**. <br> 
+If you script your build system correctly ( by using auto_rebuild() on top of your build script ) you just need to bootstrap it once, then you can just build your system as easily as it will be with systems like make, CMake and so on, and if you modify your script it will auto rebuild and launch itself without the user intervention. <br>
+And of course, **this is still C**, you can execute compilation time code or preprocessing code, macro, code editing or modifications/generation directly in your build system, customising whatever you want and do whatever you need just in C.<br><br>
 
-builder.h require a bootstrapping process before launching the build since the build system is written in C, but for this reason the entire project depend only on the C compiler, reducing the risk of having an external program to start 
-the compilation. **You just need a C compiler**. <br>
-Beside that, you are working with a fully functional programming language that is acting as a build system, it means you can infact execute code or scripts while launching compilation command, for example you 
-can include a "preprocessing" inside your *builder.c* that perform some work on the source code before launching the compilation, the possibilities are endless and can be all implemented in a build system written in 
-the same language as your project is written with, or generally require just a C compiler to bootstrap the building process, and it's easy to have one instead of gamble on the existence of make inside the target system.
+From a user's perspective side, to build your project it just need to compile your build script ( which comes down to a single line of compilation as shown before ) and then launch the build script, *without installing or requiring special executable first* in order to proceed, all of that by just having a C compiler. 
+
