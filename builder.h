@@ -13,11 +13,50 @@
 #include <string.h>
 #include <dirent.h>
 
-#define INIT_P_RETURN 69420
+/*
+ *	Default return value placeholder to every new started process. 
+ *	If a process change the return status to everything different than 
+ *	INIT_P_RETURN, the process is considered terminated. 
+ */
+
+#define INIT_P_RETURN 69420 
+
 #define DEFAULT_CMD_LIST_SIZE 4
+
 #define DEFAULT_PATH_SIZE	512
-#define LOCAL_SIZE 1024*64
+
+/*
+ *	STATIC_POOL_SIZE define a local, statically allocated chunk of 
+ *	memory where static data are allocated and maintained. This is used 
+ *	only in the process spawn if spawn_process() or spawn_process_list() are 
+ *	called.
+ *	It's a queue of data that if reach the end it will rewind the queue and 
+ *	start allocating to the start of the queue.
+ */
+
+#define STATIC_POOL_SIZE 1024*64
+
+/*
+ *	LOCAL_GC_SIZE define the size of the simplified Garbage Collector used 
+ *	to manage locally allocated memory. This define the limit of total allocation 
+ *	before the array is empty and freed.
+ */
+
+#define LOCAL_GC_SIZE 1024
+
+/*
+ *	HASH_FILE store the hash of the executable's source code  compiled as build system. This is used 
+ *	by the function auto_rebuild() and it check if there's a difference between the older 
+ *	source code and the current source code, if there's a difference the auto_rebuild() function 
+ *	will launch a compilation of the newer build system and store the new hash inside HASH_FILE, after 
+ *	that it will launch the new version of the build system automatically without intervention. 
+ *
+ *	NOTE: This is an hash based on the source code, it means that even if a comment is added the file 
+ *	will generate a complete different hash and the build will be triggered anyway. 
+ */
+
 #define HASH_FILE "./.builder_hash"
+
 #define DEFAULT_FOLDER_SIZE 16
 
 #define cmd_set(cmd, ...)\
@@ -78,13 +117,30 @@ typedef struct{
 	size_t tracker;
 }Folder; 
 
-static char* local_mem[LOCAL_SIZE] =  {0};
+// local allocator stores a list of pointers allocated 
+// in an array that can be freed at command. 
+// It's a manual garbage collector and every function that 
+// use local_alloc() as allocator can avoid manual free. 
+// It is needed if your program is meant to run in loop, 
+// continuing to allocate. If that's not the case, you can 
+// manual free the garbage collector with local_free(), keep 
+// in mind that every pointers in the local_mem array will be 
+// invalidated.
+// If the allocation limit is reached, the GC will be automatically 
+// free, this is generally not a problem, but if you want to have 
+// persistend data independent on total local allocation, is suggested 
+// to memcpy-it to a manually managed memory zone.
+static char* local_mem[LOCAL_GC_SIZE] =  {0};
 static size_t local_tracker =	0;
-static size_t local_size =		LOCAL_SIZE;
+static size_t local_size = LOCAL_GC_SIZE;
 
-static char static_mem[LOCAL_SIZE] = {0};
+
+// static_mem is a local queue of bytes used as static allocator 
+// for shared group of memory between different threads. It is only used 
+// inside spawn_process() and spawn_process_list(). 
+static char static_mem[STATIC_POOL_SIZE] = {0};
 static size_t static_tracker = 0;
-static size_t static_size = LOCAL_SIZE;
+static size_t static_size = STATIC_POOL_SIZE;
 
 void cmd_set_imp(Cmd* cmd, char* list[]);
 void* local_alloc(size_t size);
@@ -133,6 +189,7 @@ Folder* grep_from_dir(char* path, char* needle);
 
 
 void auto_rebuild(char* src, char* output_name);
+char* shell_get_stdout(char* cmd, size_t size);
 
 #ifdef BUILDER_IMP
 
@@ -146,7 +203,9 @@ void cmd_set_imp(Cmd* cmd, char* list[]){
 }
 
 void* local_alloc(size_t size){
-	if(local_tracker >= local_size) local_tracker = 0;
+	if(local_tracker >= local_size) {
+		local_free();
+	}
 	local_mem[local_tracker] = (char*)malloc(size);
 	void* ptr = local_mem[local_tracker];
 	local_tracker += 1;
@@ -717,6 +776,16 @@ void auto_rebuild(char* src_name, char* output_name){
 		exit(0);
 	}
 	return;
+}
+
+char* shell_get_stdout(char* cmd, size_t size){
+	FILE* fp = popen(cmd, "r");
+	char* p = (char*)local_alloc(sizeof(char)*size+1);
+	fread(p, sizeof(char), size, fp);
+	p[size] = '\0';
+	*(strchr(p, '\n')) = '\0';
+	pclose(fp);
+	return p;
 }
 
 #endif
