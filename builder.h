@@ -76,6 +76,20 @@
 
 #define WIN32 false // not supported yet
 
+#define file_buffer_size(b) (*((int*)(b-sizeof(int))))
+
+#define argis(w)\
+	(strcmp(argv[tracker], w) ? false : true)
+
+#define PRINT(prefix, content, ...)\
+	fprintf(stdout, "["prefix"]: "content"\n", __VA_ARGS__);
+
+#define ERROR(prefix, content, ...)\
+	fprintf(stderr, "["prefix" ERROR]: "content"\n", __VA_ARGS__);
+
+
+
+
 static char path[DEFAULT_PATH_SIZE] = {0}; // main path, used to spawn processes from their location
 
 
@@ -124,7 +138,7 @@ typedef struct{
 // It is needed if your program is meant to run in loop, 
 // continuing to allocate. If that's not the case, you can 
 // manual free the garbage collector with local_free(), keep 
-// in mind that every pointers in the local_mem array will be 
+// in mind that every pointers in the local_mem array willfile_buffer_size(buffer) be 
 // invalidated.
 // If the allocation limit is reached, the GC will be automatically 
 // free, this is generally not a problem, but if you want to have 
@@ -690,10 +704,13 @@ char* read_file(char* file){
 	fseek(fp, 0, SEEK_END);
 	int size = ftell(fp);
 	fseek(fp, 0, SEEK_SET);
+	size += sizeof(int);
 	char* buffer = (char*)local_alloc(sizeof(char)*size+1);
+	buffer += sizeof(int);
 	fread(buffer, sizeof(char), size, fp);
 	buffer[size] = '\0';
 	fclose(fp);
+	file_buffer_size(buffer) = size-4;
 	return buffer;
 }
 
