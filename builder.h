@@ -88,7 +88,8 @@
 	fprintf(stderr, "["prefix" ERROR]: "content"\n", __VA_ARGS__);
 
 
-
+#define run(cmd)\
+	wait_on_process(spawn_process((cmd)));
 
 static char path[DEFAULT_PATH_SIZE] = {0}; // main path, used to spawn processes from their location
 
@@ -278,7 +279,7 @@ char* get_current_path(){
 
 Path* path_chop(char* path){
 	char* n = NULL;
-	int i=0;
+	size_t i=0;
 	char* cache = path;
 	do{ n = strchr(cache, '/'); i+=1; cache  = n+1; }while(n != NULL);
 	cache = path;
@@ -289,7 +290,7 @@ Path* path_chop(char* path){
 	p->raw_path = NULL;
 	bool end = false;
 	size_t tracker = 0;
-	for(i = 0;i<p->depth && !end; i++){
+	for(size_t i = 0;i<p->depth && !end; i++){
 		n = strchr(cache, '/');
 		if(n == NULL) {
 			n = strchr(cache, '\0');
@@ -313,11 +314,12 @@ Path* path_chop(char* path){
 	p->raw_path = (char*)local_alloc(sizeof(char)*render_size);
 	p->raw_path[0] = '\0';
 	size_t s = 0;
+	(void)s;
 	if(!p->not_abs){
 		strcat(p->raw_path, "/");
 		s += 1;
 	}
-	for(int i=0;i<p->depth; i++){
+	for(size_t i=0;i<p->depth; i++){
 		strcat(p->raw_path, p->tree[i]);
 		if(i+1 < p->depth){
 			strcat(p->raw_path, "/");	
@@ -350,11 +352,12 @@ void path_append_to(Path* p, char* folder){
 	p->raw_path = (char*)local_alloc(sizeof(char)*render_size);
 	p->raw_path[0] = '\0';
 	size_t s = 0;
+	(void)s;
 	if(!p->not_abs){
 		strcat(p->raw_path, "/");
 		s += 1;
 	}
-	for(int i=0;i<p->depth; i++){
+	for(size_t i=0;i<p->depth; i++){
 		strcat(p->raw_path, p->tree[i]);
 		if(i+1 < p->depth){
 			strcat(p->raw_path, "/");	
@@ -368,7 +371,7 @@ void path_set_mode(Path* p, bool p_type){
 
 void path_render(char* path, Path* p){
 	path[0] = '\0';
-	for(int i=0;i<p->depth; i++){
+	for(size_t i=0;i<p->depth; i++){
 		strcat(path, "/");
 		strcat(path, p->tree[i]);
 	}
@@ -404,7 +407,7 @@ void cmd_list_append(Cmd_List* list, Cmd* cmd){
 		Cmd** old_array = list->array;
 		list->array = (Cmd**)local_alloc(sizeof(Cmd*)*list->size*2);
 		list->size *= 2;
-		for(int i=0;i<list->tracker; i++){
+		for(size_t i=0;i<list->tracker; i++){
 			list->array[i] = old_array[i];
 		}
 	}
@@ -484,7 +487,7 @@ pid_t cmd_execute(Cmd* cmd){
 
 pid_t* cmd_execute_list(Cmd_List* cmd){
 	pid_t* pid = (pid_t*)local_alloc(sizeof(pid_t)*cmd->tracker);
-	for(int i=0;i<cmd->tracker; i++){
+	for(size_t i=0;i<cmd->tracker; i++){
 		pid[i] = cmd_execute(cmd->array[i]);
 	}
 	return pid;
@@ -515,7 +518,7 @@ Process_View* spawn_process_list(Cmd_List* cmd){
 	procs->array = (Process**)static_alloc(sizeof(Process*)*cmd->tracker);
 	procs->size = cmd->tracker;
 
-	for(int i=0;i<cmd->tracker; i++){
+	for(size_t i=0;i<cmd->tracker; i++){
 		procs->array[i] = spawn_process(cmd->array[i]);
 	}
 	return procs;
@@ -535,7 +538,7 @@ void wait_on_process_list(Process_View* procs){
 	while(!exit){
 		exit = true;
 		sleep(1);
-		for(int i=0;i<procs->size;i++){
+		for(size_t i=0;i<procs->size;i++){
 			if(procs->array[i]->ret_status == INIT_P_RETURN){
 				exit = false;
 			}
