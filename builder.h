@@ -200,7 +200,7 @@ void  write_file(char* file, char* content);
 
 Folder* get_dir_content(char* path);
 Folder* grep_from_dir(char* path, char* needle);
-
+void make_folder_if_not_exist(char* path);
 
 void auto_rebuild(char* src, char* output_name);
 char* shell_get_stdout(char* cmd, size_t size);
@@ -754,6 +754,18 @@ Folder* get_dir_content(char* path){
 	return f;
 }
 
+
+void make_folder_if_not_exist(char* path){
+	DIR* dir = opendir(path);
+	if(errno == ENOENT){
+		Cmd cmd = {0};
+		cmd_set(cmd, "mkdir", path);
+		wait_on_process(spawn_process(&cmd));
+		return;
+	}else if(dir){
+		closedir(dir);
+	}
+}
 
 Folder* grep_from_dir(char* path, char* needle){
 	Folder* s = get_dir_content(path);
