@@ -56,9 +56,13 @@
 
 #define sync_run(cmd)						\
 	do{										\
-		wait_on_process(spawn_process(cmd));\
+		wait_on_process(spawn_process(&(cmd)));\
 	}while(0)								\
 
+#define async_run(cmd)			\
+	do{							\
+		spawn_process(&(cmd));	\
+	}while(0)					\
 
 #define DEFAULT_ALLOCATOR_BUFFER_LENGTH 1024*64
 #define COPY_BUFFER_SIZE 1024
