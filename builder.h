@@ -122,9 +122,10 @@ typedef struct{
 }Allocator;
 
 
-static Allocator allocator = {0};
 
 static char global_search_path[DEFAULT_SEARCH_PATH_SIZE] = {0};
+
+extern Allocator allocator;
 
 #define ALLOCATOR_SIZE (sizeof(Allocator))
 
@@ -193,7 +194,10 @@ void folder_destroy(Folder* folder);
 Folder* get_dir_content(char* path);
 
 
+
 #ifdef BUILDER_IMP
+
+Allocator allocator = {0};
 
 void auto_rebuild(char* src_name, char* output_name){
 	if(access(HASH_FILE, F_OK) != 0){
@@ -587,6 +591,7 @@ pid_t cmd_execute(Cmd* cmd){
 	}
 	printf(" ]\n");
 	cmd_append(cmd, NULL);
+	fflush(NULL);
 	pid_t pid = fork();
 	if(pid < 0){
 		abort();
