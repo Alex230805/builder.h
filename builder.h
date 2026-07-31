@@ -38,8 +38,12 @@
 
 #define WIN32 false // not supported yet, fuck microsoft 
 
+#ifndef ENABLE_ALLOCATOR_LOG
+	#define ENABLE_ALLOCATOR_LOG false
+#endif
 
 #define ARRAY_SIZE(buffer) (*((int*)(buffer-sizeof(int))))
+
 #define IS_ARGV_AT(w, i)\
 	(strcmp(argv[(i)], (w)) ? false : true )
 
@@ -217,26 +221,27 @@ void* local_alloc(int size){
 	assert(size+sizeof(int) < DEFAULT_ALLOCATOR_BUFFER_LENGTH);
 
 	void* ptr = NULL;
-	bool new_ptr = false;
 	int position = allocator.memory_journal_tracker;
 
 	for(int i=0;i<allocator.memory_journal_tracker; i++){
-		if(allocator.memory_journal[i] != NULL && allocator.memory_status[i] == FREE && allocator.memory_size[i] <= size+sizeof(int)){
+		if(allocator.memory_journal[i] != NULL && allocator.memory_status[i] == FREE && allocator.memory_size[i] <= (int)(size+sizeof(int))){
 			ptr = allocator.memory_journal[i];
+			if(ENABLE_ALLOCATOR_LOG) PRINT("local_alloc", "valid memory match usable", NULL);
 			position = i;
 			break;
 		}
 	}
 	if(ptr == NULL){
-
+		if(ENABLE_ALLOCATOR_LOG) PRINT("local_alloc", "grep new pointer from pool", NULL);
 		bool data_hit = true;
-		while(!data_hit){
+		while(data_hit){
 			data_hit = false;
 			ptr = &allocator.memory[allocator.memory_tracker];
 			int i;
 			for(i=0;i<allocator.memory_journal_tracker; i++){
 				if(allocator.memory_journal[i] == ptr && allocator.memory_status[i] == PERMANENT){
 					data_hit = true;
+					if(ENABLE_ALLOCATOR_LOG) PRINT("local_alloc", "data hit with another pointer which is flagged as freezed, searching for new pointer", NULL);
 					break;
 				}
 			}
@@ -244,8 +249,6 @@ void* local_alloc(int size){
 				allocator.memory_tracker += allocator.memory_size[i];
 			}
 		}
-		
-		new_ptr = true;
 		allocator.memory_tracker += size+sizeof(int);
 		allocator.memory_journal[position] = ptr;
 		allocator.memory_journal_tracker += 1;
@@ -257,6 +260,8 @@ void* local_alloc(int size){
 	if(allocator.memory_tracker >= DEFAULT_ALLOCATOR_BUFFER_LENGTH) allocator.memory_tracker = 0;
 	if(allocator.memory_journal_tracker >= DEFAULT_ALLOCATOR_BUFFER_LENGTH) allocator.memory_journal_tracker = 0;
 
+	assert(ptr != NULL);
+	if(ENABLE_ALLOCATOR_LOG) PRINT("local_alloc", "Allocating %p", ptr);
 	memset(ptr, 0, size+sizeof(int));
 	ptr += sizeof(int);
 	ARRAY_SIZE(ptr) = size;
@@ -265,10 +270,14 @@ void* local_alloc(int size){
 
 
 void local_free(void* ptr){
+	if(ENABLE_ALLOCATOR_LOG){
+		PRINT("local_free", "free ptr %p", ptr);
+	}
 	for(int i=0;i<allocator.memory_journal_tracker; i++){
-		if(ptr == allocator.memory_journal[allocator.memory_journal_tracker] && allocator.memory_status[i] == ALLOCATED){
+		if(ptr-sizeof(int) == allocator.memory_journal[allocator.memory_journal_tracker] && allocator.memory_status[i] == ALLOCATED){
+			if(ENABLE_ALLOCATOR_LOG) PRINT("local_free", "pointer match found, flag it to free now", NULL);
 			allocator.memory_status[i] = FREE;
-			break;		
+			break;
 		}
 	}
 	return;
@@ -276,7 +285,8 @@ void local_free(void* ptr){
 
 void* freeze_ptr(void *ptr){
 	for(int i=0;i<allocator.memory_journal_tracker; i++){
-		if(allocator.memory_journal[i] == ptr && allocator.memory_status[i] == ALLOCATED){
+		if(allocator.memory_journal[i] == ptr-sizeof(int) && allocator.memory_status[i] == ALLOCATED){
+			if(ENABLE_ALLOCATOR_LOG) PRINT("freeze_ptr", "allocated pointer %p is now freezed", ptr);
 			allocator.memory_status[i] = PERMANENT;
 			break;
 		}
@@ -286,11 +296,13 @@ void* freeze_ptr(void *ptr){
 
 void* release_ptr(void* ptr){
 	for(int i=0;i<allocator.memory_journal_tracker; i++){
-		if(allocator.memory_journal[i] == ptr && allocator.memory_status[i] == PERMANENT){
+		if(allocator.memory_journal[i] == ptr-sizeof(int) && allocator.memory_status[i] == PERMANENT){
+			if(ENABLE_ALLOCATOR_LOG) PRINT("release_ptr", "allocated pointer %p is now released, it can be deallocated now", ptr);
 			allocator.memory_status[i] = ALLOCATED;
 			break;
 		}
 	}
+	return ptr;
 }
 
 char* local_strdup(char* str){
@@ -302,8 +314,10 @@ char* local_strdup(char* str){
 void* static_alloc(int size){
 	assert(size < DEFAULT_ALLOCATOR_BUFFER_LENGTH);
 	void* ptr = &allocator.static_memory[allocator.static_memory_tracker];
-	allocator.static_memory_tracker += size;
+	allocator.static_memory_tracker += size+sizeof(int);
 	if(allocator.static_memory_tracker >= DEFAULT_ALLOCATOR_BUFFER_LENGTH) allocator.static_memory_tracker=0;
+	memset(ptr, 0, size+sizeof(int));
+	ptr += sizeof(int);
 	return ptr;
 }
 
@@ -393,7 +407,7 @@ Path* path_chop(char* path){
 	cache = path;
 	Path* p = (Path*)freeze_ptr(local_alloc(sizeof(Path)));
 	p->depth = i;
-	p->size = i*2;
+	p->size = (i*2 > DEFAULT_SEARCH_PATH_SIZE) ? i*2 : DEFAULT_SEARCH_PATH_SIZE;
 	p->tree = (char**)freeze_ptr(local_alloc(sizeof(char*)*p->size));
 	p->raw_path = NULL;
 	bool end = false;
@@ -431,7 +445,7 @@ void path_destroy(Path* p){
 }
 
 void path_append(Path* p, char* dir){
-	if(p->depth+1 > p->size){
+	if(p->depth+1 >= p->size){
 		char** old = p->tree;
 		p->tree = (char**)freeze_ptr(local_alloc(sizeof(char*)*p->size*2));
 		p->size *= 2;
@@ -443,6 +457,7 @@ void path_append(Path* p, char* dir){
 	p->tree[p->depth] = local_strdup(dir);
 	p->depth += 1;
 	local_free(release_ptr(p->raw_path));
+	p->raw_path = NULL;
 	path_render_raw(p);
 	return;
 }
@@ -468,6 +483,7 @@ void cmd_append(Cmd cmd, char* string){
 		cmd.tracker = 0;
 	}
 	cmd.array[cmd.tracker] = local_strdup(string);
+	printf("appending: %s\n", cmd.array[cmd.tracker]);
 	cmd.tracker += 1;
 	if(cmd.tracker >= cmd.size){
 		char** old = cmd.array;
@@ -501,7 +517,7 @@ void cmd_list_append(Cmd_List list, Cmd cmd){
 
 
 void cmd_destroy(Cmd cmd){
-	for(int i=0;i<cmd.size; i++){
+	for(size_t i=0;i<cmd.size; i++){
 		if(cmd.array != NULL){
 			local_free(release_ptr(cmd.array[i]));
 		}
@@ -511,7 +527,7 @@ void cmd_destroy(Cmd cmd){
 }
 
 void cmd_list_destroy(Cmd_List cmd_list){
-	for(int i=0;i<cmd_list.size; i++){
+	for(size_t i=0;i<cmd_list.size; i++){
 		if(cmd_list.array[i] != NULL){
 			cmd_destroy(*cmd_list.array[i]);
 		}
@@ -530,7 +546,7 @@ pid_t cmd_execute(Cmd cmd){
 			return 0;
 		}
 		path_destroy(exp);
-		Path* exp = path_chop(global_search_path);
+		exp = path_chop(global_search_path);
 		path_append(exp, cmd.array[0]);
 		ex = exp->raw_path;
 	}
@@ -841,7 +857,7 @@ Folder* grep_from_dir(char* path, char* needle){
 
 
 void folder_destroy(Folder* folder){
-	for(int i=0; i < folder->size; i++){
+	for(size_t i=0; i < folder->size; i++){
 		if(folder->contents_name[i] != NULL){
 			local_free(release_ptr(folder->contents_name[i]));
 		}
