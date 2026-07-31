@@ -22,7 +22,7 @@
 #define DEFAULT_CMD_SIZE 8
 
 #define cmd_set(cmd, ...)\
-		cmd_set_imp((cmd), (char* []){__VA_ARGS__, NULL});
+		cmd_set_imp((&cmd), (char* []){__VA_ARGS__, NULL});
 
 #ifdef __APPLE__
 	#define MACOS true
@@ -42,7 +42,7 @@
 	#define ENABLE_ALLOCATOR_LOG false
 #endif
 
-#define ARRAY_SIZE(buffer) (*((int*)(buffer-sizeof(int))))
+#define ARRAY_SIZE(buffer) (*((int*)(buffer-sizeof(uintptr_t))))
 
 #define IS_ARGV_AT(w, i)\
 	(strcmp(argv[(i)], (w)) ? false : true )
@@ -151,16 +151,16 @@ void path_append(Path* p, char* dir);
 void path_set_mode(Path* p, bool p_type);
 
 
-void cmd_set_imp(Cmd cmd, char* list[]);
-void cmd_append(Cmd cmd, char* string);
-void cmd_list_append(Cmd_List list, Cmd cmd);
-void cmd_destroy(Cmd cmd);
-void cmd_list_destroy(Cmd_List cmd_list);
-pid_t cmd_execute(Cmd cmd);
-pid_t* cmd_execute_list(Cmd_List cmd);
+void cmd_set_imp(Cmd* cmd, char* list[]);
+void cmd_append(Cmd* cmd, char* string);
+void cmd_list_append(Cmd_List* list, Cmd* cmd);
+void cmd_destroy(Cmd* cmd);
+void cmd_list_destroy(Cmd_List* cmd_list);
+pid_t cmd_execute(Cmd* cmd);
+pid_t* cmd_execute_list(Cmd_List* cmd);
 static void capture_return(Process* process);
-Process* spawn_process(Cmd cmd);
-Process_View* spawn_process_list(Cmd_List cmd);
+Process* spawn_process(Cmd* cmd);
+Process_View* spawn_process_list(Cmd_List* cmd);
 void wait_on_process(Process* proc);
 void wait_on_process_list(Process_View* procs);
 
@@ -194,6 +194,7 @@ void auto_rebuild(char* src_name, char* output_name){
 	if(access(HASH_FILE, F_OK) != 0){
 		char* sha = get_sha256_from_file(src_name);
 		write_file(HASH_FILE, sha);
+		local_free(sha);
 		return;
 	}
 	char* current = get_sha256_from_file(src_name);
@@ -203,28 +204,29 @@ void auto_rebuild(char* src_name, char* output_name){
 		PRINT("AUTOREBUILD", "Difference found inside '%s', rebuilding..", src_name);
 		Cmd cmd = {0};
 		cmd_set(cmd, "gcc", src_name, "-o", output_name);
-		wait_on_process(spawn_process(cmd));
+		wait_on_process(spawn_process(&cmd));
 		char* sha = get_sha256_from_file(src_name);
 		write_file(HASH_FILE, sha);
-
 		set_search_path(get_current_path());
 		cmd_set(cmd, output_name);
-		wait_on_process(spawn_process(cmd));
-		cmd_destroy(cmd);
+		wait_on_process(spawn_process(&cmd));
+
 		exit(0);
 	}
+	local_free(current);
+	local_free(old);
 	return;
 }
 
 
 void* local_alloc(int size){
-	assert(size+sizeof(int) < DEFAULT_ALLOCATOR_BUFFER_LENGTH);
+	assert(size+sizeof(uintptr_t) < DEFAULT_ALLOCATOR_BUFFER_LENGTH);
 
 	void* ptr = NULL;
 	int position = allocator.memory_journal_tracker;
 
 	for(int i=0;i<allocator.memory_journal_tracker; i++){
-		if(allocator.memory_journal[i] != NULL && allocator.memory_status[i] == FREE && allocator.memory_size[i] <= (int)(size+sizeof(int))){
+		if(allocator.memory_status[i] == FREE && allocator.memory_size[i] <= (int)(size+sizeof(uintptr_t))){
 			ptr = allocator.memory_journal[i];
 			if(ENABLE_ALLOCATOR_LOG) PRINT("local_alloc", "valid memory match usable", NULL);
 			position = i;
@@ -249,21 +251,21 @@ void* local_alloc(int size){
 				allocator.memory_tracker += allocator.memory_size[i];
 			}
 		}
-		allocator.memory_tracker += size+sizeof(int);
+		allocator.memory_tracker += size+sizeof(uintptr_t);
 		allocator.memory_journal[position] = ptr;
 		allocator.memory_journal_tracker += 1;
 	}
 
 	allocator.memory_status[position] = ALLOCATED;
-	allocator.memory_size[position] = size+sizeof(int);
+	allocator.memory_size[position] = size+sizeof(uintptr_t);
 	
 	if(allocator.memory_tracker >= DEFAULT_ALLOCATOR_BUFFER_LENGTH) allocator.memory_tracker = 0;
 	if(allocator.memory_journal_tracker >= DEFAULT_ALLOCATOR_BUFFER_LENGTH) allocator.memory_journal_tracker = 0;
 
 	assert(ptr != NULL);
 	if(ENABLE_ALLOCATOR_LOG) PRINT("local_alloc", "Allocating %p", ptr);
-	memset(ptr, 0, size+sizeof(int));
-	ptr += sizeof(int);
+	memset(ptr, 0, size+sizeof(uintptr_t));
+	ptr += sizeof(uintptr_t);
 	ARRAY_SIZE(ptr) = size;
 	return ptr;
 }
@@ -274,7 +276,7 @@ void local_free(void* ptr){
 		PRINT("local_free", "free ptr %p", ptr);
 	}
 	for(int i=0;i<allocator.memory_journal_tracker; i++){
-		if(ptr-sizeof(int) == allocator.memory_journal[allocator.memory_journal_tracker] && allocator.memory_status[i] == ALLOCATED){
+		if(ptr-sizeof(uintptr_t) == allocator.memory_journal[allocator.memory_journal_tracker] && allocator.memory_status[i] == ALLOCATED){
 			if(ENABLE_ALLOCATOR_LOG) PRINT("local_free", "pointer match found, flag it to free now", NULL);
 			allocator.memory_status[i] = FREE;
 			break;
@@ -285,7 +287,7 @@ void local_free(void* ptr){
 
 void* freeze_ptr(void *ptr){
 	for(int i=0;i<allocator.memory_journal_tracker; i++){
-		if(allocator.memory_journal[i] == ptr-sizeof(int) && allocator.memory_status[i] == ALLOCATED){
+		if(allocator.memory_journal[i] == ptr-sizeof(uintptr_t) && allocator.memory_status[i] == ALLOCATED){
 			if(ENABLE_ALLOCATOR_LOG) PRINT("freeze_ptr", "allocated pointer %p is now freezed", ptr);
 			allocator.memory_status[i] = PERMANENT;
 			break;
@@ -296,7 +298,7 @@ void* freeze_ptr(void *ptr){
 
 void* release_ptr(void* ptr){
 	for(int i=0;i<allocator.memory_journal_tracker; i++){
-		if(allocator.memory_journal[i] == ptr-sizeof(int) && allocator.memory_status[i] == PERMANENT){
+		if(allocator.memory_journal[i] == ptr-sizeof(uintptr_t) && allocator.memory_status[i] == PERMANENT){
 			if(ENABLE_ALLOCATOR_LOG) PRINT("release_ptr", "allocated pointer %p is now released, it can be deallocated now", ptr);
 			allocator.memory_status[i] = ALLOCATED;
 			break;
@@ -306,7 +308,8 @@ void* release_ptr(void* ptr){
 }
 
 char* local_strdup(char* str){
-	char* dest = (char*)local_alloc(sizeof(char)*strlen(str));
+	if(str == NULL) return NULL;
+	char* dest = (char*)local_alloc(sizeof(char)*strlen(str)+1);
 	strcpy(dest, str);
 	return dest;
 }
@@ -314,10 +317,10 @@ char* local_strdup(char* str){
 void* static_alloc(int size){
 	assert(size < DEFAULT_ALLOCATOR_BUFFER_LENGTH);
 	void* ptr = &allocator.static_memory[allocator.static_memory_tracker];
-	allocator.static_memory_tracker += size+sizeof(int);
+	allocator.static_memory_tracker += size+sizeof(uintptr_t);
 	if(allocator.static_memory_tracker >= DEFAULT_ALLOCATOR_BUFFER_LENGTH) allocator.static_memory_tracker=0;
-	memset(ptr, 0, size+sizeof(int));
-	ptr += sizeof(int);
+	memset(ptr, 0, size+sizeof(uintptr_t));
+	ptr += sizeof(uintptr_t);
 	return ptr;
 }
 
@@ -337,6 +340,7 @@ char* get_current_path(){
 void set_search_path(char* search_path){
 	if(search_path == NULL){
 		search_path[0] = '\0';
+		return;
 	}
 	strcpy(global_search_path, search_path);
 }
@@ -354,7 +358,7 @@ bool search_valid_path(char* bin){
 	char* c = strchr(buffer, ':');
 	char* pos = (char*)local_alloc(sizeof(char)*DEFAULT_SEARCH_PATH_SIZE);
 
-	bool end = true;
+	bool end = false;
 	while(!end){
 		int size = c - buffer;
 		memcpy(pos, buffer, size);
@@ -440,9 +444,13 @@ void path_destroy(Path* p){
 	}
 	local_free(release_ptr(p->raw_path));
 	local_free(release_ptr(p->tree));
-	local_free(release_ptr(p));
-
+	//local_free(release_ptr(p));
+	p->tree = NULL;
+	p->raw_path = NULL;
+	p->depth = 0;
 }
+
+
 
 void path_append(Path* p, char* dir){
 	if(p->depth+1 >= p->size){
@@ -467,8 +475,9 @@ void path_set_mode(Path* p, bool p_type){
 }
 
 
-void cmd_set_imp(Cmd cmd, char* list[]){
-	cmd.tracker = 0;
+void cmd_set_imp(Cmd* cmd, char* list[]){
+	if(cmd->tracker > 0) cmd_destroy(cmd);
+	cmd->tracker = 0;
 	int i=0;
 	while(list[i] != NULL){
 		cmd_append(cmd, list[i]);
@@ -476,87 +485,91 @@ void cmd_set_imp(Cmd cmd, char* list[]){
 	}
 }
 
-void cmd_append(Cmd cmd, char* string){
-	if(cmd.array == NULL){
-		cmd.array = (char**)freeze_ptr(local_alloc(sizeof(char*)*DEFAULT_CMD_SIZE));
-		cmd.size = DEFAULT_CMD_SIZE;
-		cmd.tracker = 0;
+void cmd_append(Cmd* cmd, char* string){
+	if(cmd->array == NULL){
+		cmd->array = (char**)freeze_ptr(local_alloc(sizeof(char*)*DEFAULT_CMD_SIZE));
+		cmd->size = DEFAULT_CMD_SIZE;
+		cmd->tracker = 0;
 	}
-	cmd.array[cmd.tracker] = local_strdup(string);
-	printf("appending: %s\n", cmd.array[cmd.tracker]);
-	cmd.tracker += 1;
-	if(cmd.tracker >= cmd.size){
-		char** old = cmd.array;
-		cmd.array = (char**)freeze_ptr(local_alloc(sizeof(char*)*cmd.size*2));
-		cmd.size *= 2;
-		for(size_t i=0;i<cmd.tracker; i++){
-			cmd.array[i] = old[i];
+	cmd->array[cmd->tracker] = freeze_ptr(local_strdup(string));
+	cmd->tracker += 1;
+	if(cmd->tracker >= cmd->size){
+		char** old = cmd->array;
+		cmd->array = (char**)freeze_ptr(local_alloc(sizeof(char*)*cmd->size*2));
+		cmd->size *= 2;
+		for(size_t i=0;i<cmd->tracker; i++){
+			cmd->array[i] = old[i];
 		}
 		local_free(release_ptr(old));
 	}
 }
 
-void cmd_list_append(Cmd_List list, Cmd cmd){
-	if(list.size == 0){
-		list.array = (Cmd**)freeze_ptr(local_alloc(sizeof(Cmd*)*DEFAULT_CMD_LIST_SIZE));
-		list.size = DEFAULT_CMD_LIST_SIZE;
-		list.tracker = 0;
+void cmd_list_append(Cmd_List* list, Cmd* cmd){
+	if(list->size == 0){
+		list->array = (Cmd**)freeze_ptr(local_alloc(sizeof(Cmd*)*DEFAULT_CMD_LIST_SIZE));
+		list->size = DEFAULT_CMD_LIST_SIZE;
+		list->tracker = 0;
 	}
-	list.array[list.tracker] = &cmd;
-	list.tracker += 1;
-	if(list.tracker >= list.size){
-		Cmd** old_array = list.array;
-		list.array = (Cmd**)freeze_ptr(local_alloc(sizeof(Cmd*)*list.size*2));
-		list.size *= 2;
-		for(size_t i=0;i<list.tracker; i++){
-			list.array[i] = old_array[i];
+	list->array[list->tracker] = cmd;
+	list->tracker += 1;
+	if(list->tracker >= list->size){
+		Cmd** old_array = list->array;
+		list->array = (Cmd**)freeze_ptr(local_alloc(sizeof(Cmd*)*list->size*2));
+		list->size *= 2;
+		for(size_t i=0;i<list->tracker; i++){
+			list->array[i] = old_array[i];
 		}
 		local_free(release_ptr(old_array));
 	}
 }
 
 
-void cmd_destroy(Cmd cmd){
-	for(size_t i=0;i<cmd.size; i++){
-		if(cmd.array != NULL){
-			local_free(release_ptr(cmd.array[i]));
+void cmd_destroy(Cmd* cmd){
+	for(size_t i=0;i<cmd->size; i++){
+		if(cmd->array[i] != NULL){
+			local_free(release_ptr(cmd->array[i]));
 		}
 	}
-	local_free(release_ptr(cmd.array));
-	cmd.array = NULL;
+	local_free(release_ptr(cmd->array));
+	cmd->array = NULL;
+	cmd->tracker = 0;
+	cmd->size = 0;
 }
 
-void cmd_list_destroy(Cmd_List cmd_list){
-	for(size_t i=0;i<cmd_list.size; i++){
-		if(cmd_list.array[i] != NULL){
-			cmd_destroy(*cmd_list.array[i]);
+void cmd_list_destroy(Cmd_List* cmd_list){
+	for(size_t i=0;i<cmd_list->size; i++){
+		if(cmd_list->array[i] != NULL){
+			cmd_destroy(cmd_list->array[i]);
 		}
 	}
-	local_free(release_ptr(cmd_list.array));
+	local_free(release_ptr(cmd_list->array));
+	cmd_list->array = NULL;
+	cmd_list->tracker = 0;
+	cmd_list->size = 0;
 }
 
-pid_t cmd_execute(Cmd cmd){
+pid_t cmd_execute(Cmd* cmd){
 	Path* exp = path_chop(global_search_path);
-	path_append(exp, cmd.array[0]);
+	path_append(exp, cmd->array[0]);
 	char* ex = exp->raw_path;
 	if(access(ex, F_OK) != 0){
-		PRINT("WARNING", "Path not provided for '%s', searching from system's default", cmd.array[0]);
-		if(!search_valid_path(cmd.array[0])){
-			ERROR("EXECUTABLE LOCATION", "Unable to locate executable '%s', please provide the search path using 'set_search_path' and 'get_current_path' for executable in the current location", cmd.array[0]);
+		PRINT("WARNING", "Path not provided for '%s', searching from system's default", cmd->array[0]);
+		if(!search_valid_path(cmd->array[0])){
+			ERROR("EXECUTABLE LOCATION", "Unable to locate executable '%s', please provide the search path using 'set_search_path' and 'get_current_path' for executable in the current location", cmd->array[0]);
 			return 0;
 		}
 		path_destroy(exp);
 		exp = path_chop(global_search_path);
-		path_append(exp, cmd.array[0]);
+		path_append(exp, cmd->array[0]);
 		ex = exp->raw_path;
 	}
 
 	printf("[CMD]: [");
-	for(size_t i=0;i<cmd.tracker; i++){
+	for(size_t i=0;i<cmd->tracker; i++){
 		if(i==0){
 			printf("%s, ", ex);
 		}else{
-			printf("%s, ", cmd.array[i]);
+			printf("%s, ", cmd->array[i]);
 		}
 	}
 	printf("NULL]\n");
@@ -566,9 +579,10 @@ pid_t cmd_execute(Cmd cmd){
 		abort();
 	}
 	if(pid > 0){
+		path_destroy(exp);
 		return pid;
 	}else{
-		if(execv(ex, cmd.array) < 0){
+		if(execv(ex, cmd->array) < 0){
 			fprintf(stderr, "Unable to spawn process: %s\n", strerror(errno));
 			abort();
 		}
@@ -576,10 +590,10 @@ pid_t cmd_execute(Cmd cmd){
 	return 0;
 }
 
-pid_t* cmd_execute_list(Cmd_List cmd){
-	pid_t* pid = (pid_t*)local_alloc(sizeof(pid_t)*cmd.tracker);
-	for(size_t i=0;i<cmd.tracker; i++){
-		pid[i] = cmd_execute(*cmd.array[i]);
+pid_t* cmd_execute_list(Cmd_List* cmd){
+	pid_t* pid = (pid_t*)local_alloc(sizeof(pid_t)*cmd->tracker);
+	for(size_t i=0;i<cmd->tracker; i++){
+		pid[i] = cmd_execute(cmd->array[i]);
 	}
 	return pid;
 }
@@ -590,7 +604,7 @@ static void capture_return(Process* process){
 	process->ret_status = WEXITSTATUS(loc_ret);
 }
 
-Process* spawn_process(Cmd cmd){
+Process* spawn_process(Cmd* cmd){
 	pthread_t* monitor = (pthread_t*)static_alloc(sizeof(pthread_t));
 	Process* proc = (Process*)static_alloc(sizeof(Process));
 	pid_t p = cmd_execute(cmd);
@@ -604,13 +618,13 @@ Process* spawn_process(Cmd cmd){
 	return proc;
 }
 
-Process_View* spawn_process_list(Cmd_List cmd){
+Process_View* spawn_process_list(Cmd_List* cmd){
 	Process_View* procs = (Process_View*)static_alloc(sizeof(Process_View));
-	procs->array = (Process**)static_alloc(sizeof(Process*)*cmd.tracker);
-	procs->size = cmd.tracker;
+	procs->array = (Process**)static_alloc(sizeof(Process*)*cmd->tracker);
+	procs->size = cmd->tracker;
 
-	for(size_t i=0;i<cmd.tracker; i++){
-		procs->array[i] = spawn_process(*cmd.array[i]);
+	for(size_t i=0;i<cmd->tracker; i++){
+		procs->array[i] = spawn_process(cmd->array[i]);
 	}
 	return procs;
 }
@@ -830,8 +844,8 @@ void make_folder_if_not_exist(char* path){
 	if(errno == ENOENT){
 		Cmd cmd = {0};
 		cmd_set(cmd, "mkdir", path);
-		wait_on_process(spawn_process(cmd));
-		cmd_destroy(cmd);
+		wait_on_process(spawn_process(&cmd));
+		cmd_destroy(&cmd);
 		return;
 	}else if(dir){
 		closedir(dir);
@@ -846,6 +860,9 @@ Folder* grep_from_dir(char* path, char* needle){
 		if(strstr(s->contents_name[i], needle) != NULL){
 			buffer[nt] = s->contents_name[i];
 			nt += 1;
+		}else{
+			local_free(release_ptr(buffer[nt]));
+			buffer[nt] = NULL;
 		}
 	}
 	local_free(release_ptr(s->contents_name));
