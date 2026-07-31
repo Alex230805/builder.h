@@ -64,10 +64,6 @@
 		spawn_process(&(cmd));	\
 	}while(0)					\
 
-#define DEFAULT_ALLOCATOR_BUFFER_LENGTH 1024*64
-#define COPY_BUFFER_SIZE 1024
-#define DEFAULT_SEARCH_PATH_SIZE 512
-
 typedef struct{
 	char** array;
 	size_t tracker;
@@ -104,6 +100,11 @@ typedef struct{
 	size_t size;
 	size_t tracker;
 }Folder; 
+
+
+#define DEFAULT_ALLOCATOR_BUFFER_LENGTH 1024*128
+#define COPY_BUFFER_SIZE 1024
+#define DEFAULT_SEARCH_PATH_SIZE 512
 
 
 typedef struct{
@@ -146,7 +147,7 @@ char* local_strdup(char* str);
 char* get_current_path();
 void set_search_path(char* search_path);
 bool search_valid_path(char* bin);
-
+void print_search_path();
 
 Path* path_chop(char* path);
 void path_destroy(Path* p);
@@ -337,7 +338,7 @@ char* get_current_path(){
 	char* nl = strchr(p, '\n');
 	if(nl != NULL) *nl = '\0';
 	pclose(fp);
-	return freeze_ptr(p);
+	return p;
 }
 
 
@@ -385,6 +386,10 @@ bool search_valid_path(char* bin){
 	local_free(buffer);
 	pclose(fp);
 	return end;
+}
+
+void print_search_path(){
+	PRINT("BUILDER Global Search Path", "'%s'", global_search_path);
 }
 
 void path_render_raw(Path* p){
@@ -568,15 +573,19 @@ pid_t cmd_execute(Cmd* cmd){
 		ex = exp->raw_path;
 	}
 
-	printf("[CMD]: [");
+	printf("[CMD] -> [ ");
 	for(size_t i=0;i<cmd->tracker; i++){
 		if(i==0){
 			printf("%s, ", ex);
 		}else{
-			printf("%s, ", cmd->array[i]);
+			if(i+1<cmd->tracker){
+				printf("%s, ", cmd->array[i]);
+			}else{
+				printf("%s", cmd->array[i]);
+			}
 		}
 	}
-	printf("NULL]\n");
+	printf(" ]\n");
 	cmd_append(cmd, NULL);
 	pid_t pid = fork();
 	if(pid < 0){
