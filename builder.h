@@ -44,15 +44,14 @@
 
 #define ARRAY_SIZE(buffer) (*((int*)(buffer-sizeof(uintptr_t))))
 
-#define IS_ARGV_AT(w, i)\
-	(strcmp(argv[(i)], (w)) ? false : true )
+#define ARG_IS(w)\
+	((strcmp(argv[(i)], (w)) == 0) ? true : false )
 
 #define PRINT(prefix, content, ...)\
 	fprintf(stdout, "["prefix"] "content"\n", __VA_ARGS__);
 
 #define ERROR(prefix, content, ...)\
 		fprintf(stdout, "[ERROR: "prefix"] "content"\n", __VA_ARGS__);
-
 
 #define sync_run(cmd)						\
 	do{										\
@@ -134,7 +133,12 @@ extern Allocator allocator;
 #define PERMANENT 2
 
 
-void auto_rebuild(char* src_name, char* output_name);
+#define auto_rebuild(src, out)						\
+	do{												\
+		auto_rebuild_imp((src), (out), argc, argv); \
+	}while(0)
+
+void auto_rebuild_imp(char* src_name, char* output_name, int argc, char** argv);
 
 
 void* local_alloc(int size);
@@ -199,7 +203,7 @@ Folder* get_dir_content(char* path);
 
 Allocator allocator = {0};
 
-void auto_rebuild(char* src_name, char* output_name){
+void auto_rebuild_imp(char* src_name, char* output_name, int argc, char** argv){
 	if(access(HASH_FILE, F_OK) != 0){
 		char* sha = get_sha256_from_file(src_name);
 		write_file(HASH_FILE, sha);
@@ -217,9 +221,12 @@ void auto_rebuild(char* src_name, char* output_name){
 		char* sha = get_sha256_from_file(src_name);
 		write_file(HASH_FILE, sha);
 		set_search_path(get_current_path());
-		cmd_set(cmd, output_name);
+		cmd_destroy(&cmd);
+		cmd.tracker = 0;
+		for(int i=0; i < argc; i++){
+			cmd_append(&cmd, argv[i]);
+		}
 		wait_on_process(spawn_process(&cmd));
-
 		exit(0);
 	}
 	local_free(current);
@@ -580,13 +587,12 @@ pid_t cmd_execute(Cmd* cmd){
 	printf("[CMD] -> [ ");
 	for(size_t i=0;i<cmd->tracker; i++){
 		if(i==0){
-			printf("%s, ", ex);
+			printf("%s", ex);
 		}else{
-			if(i+1<cmd->tracker){
-				printf("%s, ", cmd->array[i]);
-			}else{
-				printf("%s", cmd->array[i]);
-			}
+			printf("%s", cmd->array[i]);
+		}
+		if(i+1 < cmd->tracker){
+			printf(", ");
 		}
 	}
 	printf(" ]\n");

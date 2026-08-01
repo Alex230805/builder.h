@@ -2,10 +2,22 @@
 #include "builder.h"
 
 
-int main(){
-	/* WARNING: this depends on sha1 installed in your system */
+int main(int argc, char** argv){
+	/* to use the auto rebuild, please define main() aith int argc, char** argv*/
 	auto_rebuild("example.c", "example");
+	
 	printf("Testing build system\n");
+	printf("Parsing command line arguments\n");
+	if(argc > 1){
+		for(int i=1;i<argc; i++){
+			if(ARG_IS("test")){
+				printf("received %s\n", argv[i]);
+			}else{
+				printf("parameter not recognised: %s\n", argv[i]);
+			}
+		}
+	}
+
 	if(MACOS){
 		printf("Current execution environment: macos\n");
 	}else if(LINUX){
@@ -13,6 +25,7 @@ int main(){
 	}else{
 		printf("Current execution environment: unknown\n");
 	}
+
 	Cmd cmd[2] = {0};
 	Cmd_List cmd_list = {0};
 	cmd_set(cmd[0], "gcc", "-I./", "example.c", "-o", "out1");
