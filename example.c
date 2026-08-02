@@ -1,4 +1,4 @@
-#define BUILDER_IMP
+#define BUILDER_SCRIPT
 #include "builder.h"
 
 
@@ -59,11 +59,7 @@ int main(){
 	printf("New path: %s\n", p->raw_path);
 	printf("Exiting build system\n");
 	
-	path_destroy(p);
-	p = NULL;
-	
-	cmd_list_destroy(&cmd_list);
-	folder_destroy(f);
+
 	printf("Testing custom search path\n");
 	print_search_path();
 	set_search_path("/custom/path");

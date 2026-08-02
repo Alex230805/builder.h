@@ -20,6 +20,7 @@
 #define DEFAULT_FOLDER_SIZE	16
 #define DEFAULT_CMD_LIST_SIZE 16
 #define DEFAULT_CMD_SIZE 8
+#define DEFAULT_PATH_SIZE 16
 
 #define cmd_set(cmd, ...)\
 		cmd_set_imp((&cmd), (char* []){__VA_ARGS__, NULL});
@@ -53,27 +54,38 @@
 #define ERROR(prefix, content, ...)\
 		fprintf(stdout, "[ERROR: "prefix"] "content"\n", __VA_ARGS__)
 
+
 #define sync_run(cmd)						\
 	do{										\
 		wait_on_process(spawn_process(&(cmd)));\
 	}while(0)								\
+
 
 #define async_run(cmd)			\
 	do{							\
 		spawn_process(&(cmd));	\
 	}while(0)					\
 
-#define main()\
-	main(int argc, char** argv){\
-		init_alloc();\
-		int d = builder_main(argc, argv);\
-		if(d > 0){\
-			PRINT("BUILDER", "Execution returned with error code %d", d);\
-		}\
-		close_alloc();\
-	}\
+
+
+
+
+#ifdef BUILDER_SCRIPT
+
+#define BUILDER_IMP
+
+#define main()																	\
+	main(int argc, char** argv){												\
+		init_alloc();															\
+		int d = builder_main(argc, argv);										\
+		if(d > 0){																\
+			PRINT("BUILDER", "Execution returned with error code %d", d);		\
+		}																		\
+		close_alloc();															\
+	}																			\
 	int builder_main(int argc , char** argv)
 
+#endif
 
 
 typedef struct{
@@ -121,6 +133,7 @@ typedef struct{
 
 
 typedef struct{
+	bool enabled;			// enable status for the allocator
 	char* memory;			// main memory pool tracker;
 	size_t memory_tracker;
 
@@ -260,11 +273,13 @@ void init_alloc(){
 	allocator.memory_journal = (void**)malloc(sizeof(void*)*DEFAULT_ALLOCATOR_BUFFER_LENGTH);
 	allocator.memory_status = (int*)malloc(sizeof(int)*DEFAULT_ALLOCATOR_BUFFER_LENGTH);
 	allocator.memory_size = (int*)malloc(sizeof(int)*DEFAULT_ALLOCATOR_BUFFER_LENGTH);
+	allocator.enabled = true;
 	return;
 }
 
 
 void close_alloc(){
+	allocator.enabled = false;
 	free(allocator.memory); allocator.memory = NULL;
 	free(allocator.memory_journal); allocator.memory_journal = NULL;
 	free(allocator.memory_status); allocator.memory_status = NULL;
@@ -273,8 +288,15 @@ void close_alloc(){
 
 void* local_alloc(int size){
 	assert(size+sizeof(uintptr_t) < DEFAULT_ALLOCATOR_BUFFER_LENGTH);
-
 	void* ptr = NULL;
+	if(!allocator.enabled){
+		ptr = malloc(sizeof(char)*size + sizeof(uintptr_t));
+		assert(ptr != NULL);
+		ptr += sizeof(uintptr_t);
+		ARRAY_SIZE(ptr) = size;
+		return ptr;
+	
+	}
 	int position = allocator.memory_journal_tracker;
 
 	for(int i=0;i<allocator.memory_journal_tracker; i++){
@@ -324,6 +346,7 @@ void* local_alloc(int size){
 
 
 void local_free(void* ptr){
+	if(!allocator.enabled) free(ptr-sizeof(uintptr_t)); 
 	if(ENABLE_ALLOCATOR_LOG){
 		PRINT("local_free", "free ptr %p", ptr);
 	}
@@ -338,6 +361,7 @@ void local_free(void* ptr){
 }
 
 void* freeze_ptr(void *ptr){
+	if(!allocator.enabled) return ptr;
 	for(int i=0;i<allocator.memory_journal_tracker; i++){
 		if(allocator.memory_journal[i] == ptr-sizeof(uintptr_t) && allocator.memory_status[i] == ALLOCATED){
 			if(ENABLE_ALLOCATOR_LOG) PRINT("freeze_ptr", "allocated pointer %p is now freezed", ptr);
@@ -349,6 +373,7 @@ void* freeze_ptr(void *ptr){
 }
 
 void* release_ptr(void* ptr){
+	if(!allocator.enabled) return ptr;
 	for(int i=0;i<allocator.memory_journal_tracker; i++){
 		if(allocator.memory_journal[i] == ptr-sizeof(uintptr_t) && allocator.memory_status[i] == PERMANENT){
 			if(ENABLE_ALLOCATOR_LOG) PRINT("release_ptr", "allocated pointer %p is now released, it can be deallocated now", ptr);
@@ -493,6 +518,7 @@ Path* path_chop(char* path){
 }
 
 void path_destroy(Path* p){
+	if(!allocator.enabled) return;
 	for(size_t i=0;i<p->size; i++){
 		if(p->tree[i] != NULL){
 			local_free(release_ptr(p->tree[i]));
@@ -509,10 +535,21 @@ void path_destroy(Path* p){
 
 
 void path_append(Path* p, char* dir){
+	assert(p != NULL);
+	if(p->tree == NULL || p->size < DEFAULT_PATH_SIZE){
+		p->depth = 0;
+		p->size = DEFAULT_PATH_SIZE;
+		p->tree = (char**)freeze_ptr(local_alloc(sizeof(char*)*p->size));
+		p->raw_path = NULL;
+	}
 	if(p->depth+1 >= p->size){
 		char** old = p->tree;
-		p->tree = (char**)freeze_ptr(local_alloc(sizeof(char*)*p->size*2));
-		p->size *= 2;
+		if(p->size == 0){
+			p->size = DEFAULT_PATH_SIZE;	
+		}else{
+			p->size *= 2;
+		}
+		p->tree = (char**)freeze_ptr(local_alloc(sizeof(char*)*p->size));
 		for(size_t i=0;i<p->depth; i++){
 			p->tree[i] = old[i];
 		}
@@ -542,7 +579,8 @@ void cmd_set_imp(Cmd* cmd, char* list[]){
 }
 
 void cmd_append(Cmd* cmd, char* string){
-	if(cmd->array == NULL){
+	assert(cmd != NULL);
+	if(cmd->array == NULL || cmd->size < DEFAULT_CMD_SIZE){
 		cmd->array = (char**)freeze_ptr(local_alloc(sizeof(char*)*DEFAULT_CMD_SIZE));
 		cmd->size = DEFAULT_CMD_SIZE;
 		cmd->tracker = 0;
@@ -581,6 +619,7 @@ void cmd_list_append(Cmd_List* list, Cmd* cmd){
 
 
 void cmd_destroy(Cmd* cmd){
+	if(!allocator.enabled) return;
 	for(size_t i=0;i<cmd->size; i++){
 		if(cmd->array[i] != NULL){
 			local_free(release_ptr(cmd->array[i]));
@@ -593,6 +632,7 @@ void cmd_destroy(Cmd* cmd){
 }
 
 void cmd_list_destroy(Cmd_List* cmd_list){
+	if(!allocator.enabled) return;
 	for(size_t i=0;i<cmd_list->size; i++){
 		if(cmd_list->array[i] != NULL){
 			cmd_destroy(cmd_list->array[i]);
@@ -934,6 +974,7 @@ Folder* grep_from_dir(char* path, char* needle){
 
 
 void folder_destroy(Folder* folder){
+	if(!allocator.enabled) return;
 	for(size_t i=0; i < folder->size; i++){
 		if(folder->contents_name[i] != NULL){
 			local_free(release_ptr(folder->contents_name[i]));
