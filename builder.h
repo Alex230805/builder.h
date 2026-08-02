@@ -48,10 +48,10 @@
 	((strcmp(argv[(i)], (w)) == 0) ? true : false )
 
 #define PRINT(prefix, content, ...)\
-	fprintf(stdout, "["prefix"] "content"\n", __VA_ARGS__);
+	fprintf(stdout, "["prefix"] "content"\n", __VA_ARGS__)
 
 #define ERROR(prefix, content, ...)\
-		fprintf(stdout, "[ERROR: "prefix"] "content"\n", __VA_ARGS__);
+		fprintf(stdout, "[ERROR: "prefix"] "content"\n", __VA_ARGS__)
 
 #define sync_run(cmd)						\
 	do{										\
@@ -62,6 +62,19 @@
 	do{							\
 		spawn_process(&(cmd));	\
 	}while(0)					\
+
+#define main()\
+	main(int argc, char** argv){\
+		init_alloc();\
+		int d = builder_main(argc, argv);\
+		if(d > 0){\
+			PRINT("BUILDER", "Execution returned with error code %d", d);\
+		}\
+		close_alloc();\
+	}\
+	int builder_main(int argc , char** argv)
+
+
 
 typedef struct{
 	char** array;
@@ -102,21 +115,22 @@ typedef struct{
 
 
 #define DEFAULT_ALLOCATOR_BUFFER_LENGTH 1024*128
+#define STATIC_BUFFER_LENGTH 1024*2
 #define COPY_BUFFER_SIZE 1024
 #define DEFAULT_SEARCH_PATH_SIZE 512
 
 
 typedef struct{
-	char memory[DEFAULT_ALLOCATOR_BUFFER_LENGTH];			// main memory pool tracker;
+	char* memory;			// main memory pool tracker;
 	size_t memory_tracker;
 
-	void* memory_journal[DEFAULT_ALLOCATOR_BUFFER_LENGTH];  // memory pointers journal
-	int memory_status[DEFAULT_ALLOCATOR_BUFFER_LENGTH];		// memory status indicator, mapped to tjournal
-	int memory_size[DEFAULT_ALLOCATOR_BUFFER_LENGTH];		// memory status indicator, mapped to tjournal
+	void** memory_journal;  // memory pointers journal
+	int* memory_status;		// memory status indicator, mapped to tjournal
+	int* memory_size;		// memory status indicator, mapped to tjournal
 	int memory_journal_tracker;
 		
 
-	char static_memory[DEFAULT_ALLOCATOR_BUFFER_LENGTH];   // static memory pool. Dedicated to threads
+	char static_memory[STATIC_BUFFER_LENGTH];   // static memory pool. Dedicated to threads
 	size_t static_memory_tracker;
 }Allocator;
 
@@ -140,6 +154,11 @@ extern Allocator allocator;
 
 void auto_rebuild_imp(char* src_name, char* output_name, int argc, char** argv);
 
+
+int builder_main(int argc, char** argv);
+
+void init_alloc();
+void close_alloc();
 
 void* local_alloc(int size);
 void local_free(void* ptr);
@@ -234,6 +253,23 @@ void auto_rebuild_imp(char* src_name, char* output_name, int argc, char** argv){
 	return;
 }
 
+
+void init_alloc(){
+	memset(&allocator, 0, sizeof(Allocator));
+	allocator.memory = (char*)malloc(sizeof(char)*DEFAULT_ALLOCATOR_BUFFER_LENGTH);
+	allocator.memory_journal = (void**)malloc(sizeof(void*)*DEFAULT_ALLOCATOR_BUFFER_LENGTH);
+	allocator.memory_status = (int*)malloc(sizeof(int)*DEFAULT_ALLOCATOR_BUFFER_LENGTH);
+	allocator.memory_size = (int*)malloc(sizeof(int)*DEFAULT_ALLOCATOR_BUFFER_LENGTH);
+	return;
+}
+
+
+void close_alloc(){
+	free(allocator.memory); allocator.memory = NULL;
+	free(allocator.memory_journal); allocator.memory_journal = NULL;
+	free(allocator.memory_status); allocator.memory_status = NULL;
+	free(allocator.memory_size); allocator.memory_size = NULL;
+}
 
 void* local_alloc(int size){
 	assert(size+sizeof(uintptr_t) < DEFAULT_ALLOCATOR_BUFFER_LENGTH);
@@ -331,10 +367,10 @@ char* local_strdup(char* str){
 }
 
 void* static_alloc(int size){
-	assert(size < DEFAULT_ALLOCATOR_BUFFER_LENGTH);
+	assert(size < STATIC_BUFFER_LENGTH);
 	void* ptr = &allocator.static_memory[allocator.static_memory_tracker];
 	allocator.static_memory_tracker += size+sizeof(uintptr_t);
-	if(allocator.static_memory_tracker >= DEFAULT_ALLOCATOR_BUFFER_LENGTH) allocator.static_memory_tracker=0;
+	if(allocator.static_memory_tracker >= STATIC_BUFFER_LENGTH) allocator.static_memory_tracker=0;
 	memset(ptr, 0, size+sizeof(uintptr_t));
 	ptr += sizeof(uintptr_t);
 	return ptr;

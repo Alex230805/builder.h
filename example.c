@@ -2,8 +2,7 @@
 #include "builder.h"
 
 
-int main(int argc, char** argv){
-	/* to use the auto rebuild, please define main() aith int argc, char** argv*/
+int main(){
 	auto_rebuild("example.c", "example");
 	
 	printf("Testing build system\n");
@@ -62,22 +61,6 @@ int main(int argc, char** argv){
 	
 	path_destroy(p);
 	p = NULL;
-	// Destructor are needed if you want to deallocate memory from the allocator of build.h
-	// Data structure that interact with builder.h and are intended to be managed by the user
-	// are allocated with local_alloc() and then the pointer is freeze_ptr() to extend the 
-	// lifetime. This default behaviour was introduced to avoit pointer invalidation of local 
-	// objects like folder content, path tree names and so on, while working with complex 
-	// build system configuration.
-	// This object retain memory inside the allocator no matter the execution time or total
-	// allocation amount.
-	// To prevente an overflow it's suggested to avoid allocating too many objects of the same 
-	// type and work with what already is present ( for example working with the same small pool of Cmd struct )
-	// and/or call release_ptr() on the objects that are returned from builder.h functions like 
-	// Folder and Path, which will flag them as usable and it allow the allocator to 
-	// use the same address to allocate new information if needed.
-	// 
-	// Functions that return strings do not require a release_ptr(). e.g get_sha256();
-	//
 	
 	cmd_list_destroy(&cmd_list);
 	folder_destroy(f);
