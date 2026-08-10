@@ -1,10 +1,19 @@
 #define BUILDER_SCRIPT
+
+/*	Define this to strip the default 
+ *	autorebuild target. If this is 
+ *	activated then you must manually 
+ *	specify the autorebuild integration.
+ *
+ */
+
+//#define STRIP_DEFAULT_AUTOREBUILD
+
+
 #include "builder.h"
 
 
 int main(){
-	auto_rebuild("example.c", "example");
-	
 	printf("Testing build system\n");
 	printf("Parsing command line arguments\n");
 	if(argc > 1){

@@ -41,6 +41,51 @@ Builer.h include it's own allocator to perform internal processing and organise 
 To simplify, "#define BUILDER_SCRIPT" will automatically define "BUILDER_IMP" in itself, but if you want to use the "builder.h" with the implementation you can just use "#define BUILDER_IMP" which will not introduce the automatic initialization process of 
 the allocator.<br>
 
+### Autorebuild activated by default in BUILDER_SCRIPT mode
+<br>
+
+Additionally, by enabling the "BUILDER_SCRIPT" preprocessor constant, the auto-rebuild technology will be enabled by default within the main entry point. The target acquisition is done by reading the invokation command from the argv[] array throgh the standard input. Due to this integration the build system take in account that the executable name is directly related to the source file name of the build system. <br>
+If for example the build script is defined inside *"builder.c"*, then the autorebuild technology from the "BUILDER_SCRIPT" inherits from the invokation name( which will be "./builder" at argv[0] ) to identify the source file ( it suppose that the source script is located inside "./builder.c" ).<br>
+<br>
+It's also important to correctly bootstrap the build system for that reason. If for example a file "builder.c" is compiled as "build", then the autorebuild will check for a "build.c" as a source target and not the original "builder.c".<br>
+<br>
+
+```C
+
+#define BUILDER_SCRIPT
+#include "builder.h"
+
+int main(){
+    /* 
+        rest of the build script here, 
+        autorebuild enabled by default 
+    */
+    return 0;
+}
+
+```
+<br>
+
+**If this is not a desired effect, then it's possible to disable it by providing the flag "STRIP_DEFAULT_AUTOREBUILD" before including the header file:**<br>
+
+```C
+
+#define BUILDER_SCRIPT
+#define STRIP_DEFAULT_AUTOREBUILD
+#include "builder.h"
+
+int main(){
+    auto_rebuild("source.c", "source");
+    /* rest of the build script here */
+    return 0;
+}
+
+```
+
+For more information it's suggested to look at the source code for more clarification, to cut it short it allow you to use the advantages for having "BUILDER_SCRIPT" defined, which includes the allocator initialization and the return code detection, without activating also the default autorebuild target.<br>
+But keep in mind that if this mode is enabled, you have to explicitly define it by your self. <br><br>
+
+
 #### Working without allocator
 
 Builder.h uses the internal allocator only if the builder is initialized correcly, which imply that if the allocator is not initialized it will switch to plain malloc and free operation. Defining "BUILDER_IMP" before including "builder.h" will not initialize the allocator, and each functions that internally call to the allocator functions will require pointers outside the monitored memory scope and so destructor for data-structure will stop working while the memory management is redirected to the user who's working with builder.h functions. <br>

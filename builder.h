@@ -54,6 +54,17 @@
 #define ERROR(prefix, content, ...)\
 		fprintf(stdout, "[ERROR: "prefix"] "content"\n", __VA_ARGS__)
 
+#define TODO(content)\
+		fprintf(stdout, "[TODO] "content"\n")
+
+#define UNIMPLEMENTED(func_name)							\
+	do{														\
+		fprintf(stdout, "[NOT IMPLEMENTED] "func_name"\n"); \
+		exit(1);											\
+	}while(0)
+
+#define UNUSED(var_name)\
+	(void)var_name
 
 #define sync_run(cmd)						\
 	do{										\
@@ -77,6 +88,7 @@
 #define main()																	\
 	main(int argc, char** argv){												\
 		init_alloc();															\
+		builder_main_auto_rebuild()												\
 		int d = builder_main(argc, argv);										\
 		if(d > 0){																\
 			PRINT("BUILDER", "Execution returned with error code %d", d);		\
@@ -165,8 +177,20 @@ extern Allocator allocator;
 		auto_rebuild_imp((src), (out), argc, argv); \
 	}while(0)
 
-void auto_rebuild_imp(char* src_name, char* output_name, int argc, char** argv);
 
+#ifndef STRIP_DEFAULT_AUTOREBUILD
+#define builder_main_auto_rebuild()	\
+	do{								\
+		char buffer[256] = {0};		\
+		strcpy(buffer, argv[0]);	\
+		strcat(buffer, ".c");		\
+		auto_rebuild_imp(buffer, argv[0], argc, argv);\
+	}while(0);
+#else 
+	#define builder_main_auto_rebuild() 
+#endif
+
+void auto_rebuild_imp(char* src_name, char* output_name, int argc, char** argv);
 
 int builder_main(int argc, char** argv);
 
