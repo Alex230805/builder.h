@@ -21,6 +21,7 @@
 #define DEFAULT_CMD_LIST_SIZE 16
 #define DEFAULT_CMD_SIZE 8
 #define DEFAULT_PATH_SIZE 16
+#define FORCE_REBUILD_CHECK -69
 
 #define cmd_set(cmd, ...)\
 		cmd_set_imp((&cmd), (char* []){__VA_ARGS__, NULL});
@@ -92,6 +93,10 @@
 		int d = builder_main(argc, argv);										\
 		if(d > 0){																\
 			PRINT("BUILDER", "Execution returned with error code %d", d);		\
+		}																		\
+		if(d  == FORCE_REBUILD_CHECK){											\
+			PRINT("BUILDER", "Forcing autorebuild check, error code %d", d);	\
+			builder_main_auto_rebuild();										\
 		}																		\
 		close_alloc();															\
 	}																			\
@@ -204,7 +209,6 @@ void* freeze_ptr(void *ptr);
 void* release_ptr(void* ptr);
 char* local_strdup(char* str);
 
-
 char* get_current_path();
 void set_search_path(char* search_path);
 bool search_valid_path(char* bin);
@@ -215,7 +219,6 @@ void path_destroy(Path* p);
 void path_render_raw(Path* p);
 void path_append(Path* p, char* dir);
 void path_set_mode(Path* p, bool p_type);
-
 
 void cmd_set_imp(Cmd* cmd, char* list[]);
 void cmd_append(Cmd* cmd, char* string);
@@ -230,29 +233,24 @@ Process_View* spawn_process_list(Cmd_List* cmd);
 void wait_on_process(Process* proc);
 void wait_on_process_list(Process_View* procs);
 
-
 char* get_sha512(char* string);
 char* get_sha256(char* string);
 char* get_sha1(char* string);
-
 
 char* get_sha512_from_file(char* file);
 char* get_sha256_from_file(char* file);
 char* get_sha1_from_file(char* file);
 
-
 char* read_file(char* file);
 void  write_file(char* file, char* content);
-
 
 void make_folder_if_not_exist(char* path);
 char* shell_get_stdout(char* cmd, size_t size);
 
-
 Folder* grep_from_dir(char* path, char* needle);
 void folder_destroy(Folder* folder);
 Folder* get_dir_content(char* path);
-
+bool is_file_present(char* path, char* name);
 
 
 #ifdef BUILDER_IMP
@@ -268,8 +266,7 @@ void auto_rebuild_imp(char* src_name, char* output_name, int argc, char** argv){
 	}
 	char* current = get_sha256_from_file(src_name);
 	char* old	  = read_file(HASH_FILE);
-
-	if(memcmp(old, current, strlen(old)) != 0){
+	if(strcmp(old, current) != 0){
 		PRINT("AUTOREBUILD", "Difference found inside '%s', rebuilding..", src_name);
 		Cmd cmd = {0};
 		cmd_set(cmd, "gcc", src_name, "-o", output_name);
@@ -1038,6 +1035,19 @@ Folder* get_dir_content(char* path){
 	return f;
 }
 
+bool is_file_present(char* path, char* name){
+	Folder* f = get_dir_content(path);
+	bool found = false;
+	for(int i=0;i<f->tracker; i++){
+		f->contents_name[i][strlen(f->contents_name[i])-1] = '\0';
+		if(strcmp(f->contents_name[i], name) == 0){
+			found = true;
+			break;
+		}
+	}
+	folder_destroy(f);
+	return found;
+}
 
 #endif
 #endif // BUILDER_H
