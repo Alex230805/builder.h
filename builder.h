@@ -138,8 +138,8 @@ typedef struct{
 
 typedef struct{
 	char** contents_name; 
-	size_t size;
 	size_t tracker;
+	size_t size;
 }Folder; 
 
 
@@ -409,6 +409,7 @@ char* local_strdup(char* str){
 	if(str == NULL) return NULL;
 	char* dest = (char*)local_alloc(sizeof(char)*strlen(str)+1);
 	strcpy(dest, str);
+	dest[strlen(str)] = '\0';
 	return dest;
 }
 
@@ -491,15 +492,15 @@ void path_render_raw(Path* p){
 		render_size += strlen(p->tree[i]);
 	}
 	render_size*=2;
-	p->raw_path = (char*)freeze_ptr(local_alloc(sizeof(char)*render_size));
-	p->raw_path[0] = '\0';
+	p->raw_path = (char*)freeze_ptr(local_alloc(sizeof(char)*render_size+1));
+	memset(p->raw_path, 0x00, render_size);
 	if(!p->not_abs){
 		strcat(p->raw_path, "/");
 	}
 	for(size_t i=0;i<p->depth; i++){
 		strcat(p->raw_path, p->tree[i]);
 		if(i+1 < p->depth){
-			strcat(p->raw_path, "/");	
+			strcat(p->raw_path, "/");
 		}
 	}
 	return;
@@ -514,7 +515,7 @@ Path* path_chop(char* path){
 	Path* p = (Path*)freeze_ptr(local_alloc(sizeof(Path)));
 	p->depth = i;
 	p->size = (i*2 > DEFAULT_SEARCH_PATH_SIZE) ? i*2 : DEFAULT_SEARCH_PATH_SIZE;
-	p->tree = (char**)freeze_ptr(local_alloc(sizeof(char*)*p->size));
+	p->tree = (char**)freeze_ptr(local_alloc(sizeof(char*)*p->size+1));
 	p->raw_path = NULL;
 	bool end = false;
 	size_t tracker = 0;
@@ -1017,7 +1018,7 @@ Folder* get_dir_content(char* path){
 	if(dir == NULL) return NULL;
 
 	while((e = readdir(dir)) != NULL){
-		char* name = (char*)freeze_ptr(local_alloc(sizeof(char)*strlen(e->d_name)));
+		char* name = (char*)freeze_ptr(local_alloc(sizeof(char)*strlen(e->d_name)+1));
 		strcpy(name, e->d_name);
 		f->contents_name[f->tracker] = name;
 		f->tracker += 1;
