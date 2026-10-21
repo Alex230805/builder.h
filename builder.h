@@ -15,7 +15,10 @@
 #include <dirent.h>
 #include <assert.h>
 
-#define HASH_FILE "./.builder_hash"
+#ifndef HASH_FILE
+#	define HASH_FILE "./.builder_hash"
+#endif
+
 #define INIT_P_RETURN 133769
 #define DEFAULT_FOLDER_SIZE	16
 #define DEFAULT_CMD_LIST_SIZE 16
@@ -24,7 +27,10 @@
 #define FORCE_REBUILD_CHECK -69
 
 #define cmd_set(cmd, ...)\
-		cmd_set_imp((&cmd), (char* []){__VA_ARGS__, NULL});
+		cmd_set_imp((&cmd), (char* []){__VA_ARGS__, NULL})
+
+#define shell_run(...)\
+	shell_run_imp((char*[]){__VA_ARGS__, NULL})
 
 #ifdef __APPLE__
 	#define MACOS true
@@ -246,6 +252,8 @@ void  write_file(char* file, char* content);
 
 void make_folder_if_not_exist(char* path);
 char* shell_get_stdout(char* cmd, size_t size);
+int shell_run_command(char* cmd);
+int shell_run_imp(char* cmd[]);
 
 Folder* grep_from_dir(char* path, char* needle);
 void folder_destroy(Folder* folder);
@@ -959,6 +967,32 @@ char* shell_get_stdout(char* cmd, size_t size){
 	if(strchr(p, '\n')) *(strchr(p, '\n')) = '\0';
 	pclose(fp);
 	return p;
+}
+
+int shell_run_command(char* cmd){
+	FILE* fp = popen(cmd, "w");
+	int ret_status = 0;
+	for(;;){
+		ret_status = pclose(fp);
+		if(ret_status != -1) break;
+	}
+	return WEXITSTATUS(ret_status);
+}
+
+int shell_run_imp(char* cmd[]){
+	int size = 0;
+	int i=0;
+	while(cmd[i] != NULL){
+		size += strlen(cmd[i]);
+		i+=1;
+	}
+	char* buffer = (char*)local_alloc(sizeof(char)*size+8);
+	for(int j = 0;j < i; j++){
+		strcat(buffer, cmd[j]);
+	}
+	int ret = shell_run_command(buffer);
+	local_free(buffer);
+	return ret;
 }
 
 void make_folder_if_not_exist(char* path){
