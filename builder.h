@@ -55,6 +55,9 @@
 #define ARG_IS(w)\
 	((strcmp(argv[(i)], (w)) == 0) ? true : false )
 
+
+#ifndef QUIET_LOGS
+
 #define PRINT(prefix, content, ...)\
 	fprintf(stdout, "["prefix"] "content"\n", __VA_ARGS__)
 
@@ -64,11 +67,20 @@
 #define TODO(content)\
 		fprintf(stdout, "[TODO] "content"\n")
 
+#else
+
+#define PRINT(prefix, content, ...)
+#define ERROR(prefix, content, ...)
+#define TODO(content)			   
+
+#endif
+
 #define UNIMPLEMENTED(func_name)							\
 	do{														\
 		fprintf(stdout, "[NOT IMPLEMENTED] "func_name"\n"); \
 		exit(1);											\
 	}while(0)
+
 
 #define UNUSED(var_name)\
 	(void)var_name
@@ -689,7 +701,7 @@ pid_t cmd_execute(Cmd* cmd){
 		path_append(exp, cmd->array[0]);
 		ex = exp->raw_path;
 	}
-
+#ifndef QUIET_LOGS
 	printf("[CMD] -> [ ");
 	for(size_t i=0;i<cmd->tracker; i++){
 		if(i==0){
@@ -702,6 +714,7 @@ pid_t cmd_execute(Cmd* cmd){
 		}
 	}
 	printf(" ]\n");
+#endif
 	cmd_append(cmd, NULL);
 	fflush(NULL);
 	pid_t pid = fork();
