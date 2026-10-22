@@ -1086,7 +1086,7 @@ Folder* get_dir_content(char* path){
 bool is_file_present(char* path, char* name){
 	Folder* f = get_dir_content(path);
 	bool found = false;
-	for(int i=0;i<f->tracker; i++){
+	for(size_t i=0;i<f->tracker; i++){
 		f->contents_name[i][strlen(f->contents_name[i])-1] = '\0';
 		if(strcmp(f->contents_name[i], name) == 0){
 			found = true;
